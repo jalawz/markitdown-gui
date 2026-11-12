@@ -1,0 +1,48 @@
+name: Feature Request
+description: Sugerir uma melhoria
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sua ideia é bem-vinda! Verifique o `AGENTS.md` para ver se ela já está
+        no backlog (seção 5) — e diga qual item é, para facilitar o rastreamento.
+
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve?
+      description: Descreva o cenário de uso, não apenas a solução.
+      placeholder: Quando converto 30 PDFs de uma vez, preciso abrir o MarkItDown
+        30 vezes...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Proposta
+      description: Como você imagina que deveria funcionar?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: escopo
+    attributes:
+      label: Esforço estimado
+      options:
+        - Pequeno (menos de 1 hora)
+        - Médio (1 a 4 horas)
+        - Grande (mais de 4 horas)
+        - Não sei
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: plataformas
+    attributes:
+      label: Plataformas afetadas
+      options:
+        - label: Windows
+        - label: macOS
+        - label: Linux

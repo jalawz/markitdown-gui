@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentacao
+    url: https://github.com/jalawz/markitdown-gui#readme
+    about: Comece pelo README para instalacao e uso.
+  - name: Backlog de melhorias
+    url: https://github.com/jalawz/markitdown-gui/blob/main/AGENTS.md#5-backlog-de-melhorias
+    about: Sugestoes ja mapeadas e priorizadas no AGENTS.md.
+  - name: Microsoft MarkItDown
+    url: https://github.com/microsoft/markitdown
+    about: A biblioteca que faz a conversao. Bugs dela vao para la.

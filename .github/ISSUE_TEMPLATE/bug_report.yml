@@ -1,0 +1,71 @@
+name: Bug Report
+description: Reportar um problema
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por reportar! Para acelerar o processo, inclua o máximo de
+        informação possível.
+
+  - type: textarea
+    id: descricao
+    attributes:
+      label: Descrição
+      description: O que aconteceu de errado?
+      placeholder: Ao converter um PDF de 500 páginas, a interface trava...
+    validations:
+      required: true
+
+  - type: textarea
+    id: passos
+    attributes:
+      label: Passos para reproduzir
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Comportamento esperado
+      description: O que você esperava que acontecesse?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Sistema operacional
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Outro
+    validations:
+      required: true
+
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do Python
+      placeholder: "3.12.10"
+    validations:
+      required: true
+
+  - type: input
+    id: markitdown
+    attributes:
+      label: Versão do markitdown
+      description: Rode `python -c "import markitdown; print(markitdown.__version__)"`
+      placeholder: "0.1.9"
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Saída do terminal
+      description: Cole aqui a saída completa do erro (é o que aparece no painel Registro).
+      render: shell
