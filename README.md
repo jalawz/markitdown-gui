@@ -4,6 +4,7 @@
 
 [![Licença MIT](https://img.shields.io/badge/licença-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![CI](https://github.com/jalawz/markitdown-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/jalawz/markitdown-gui/actions/workflows/ci.yml)
 [![Plataformas](https://img.shields.io/badge/plataformas-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](docs/PLATFORMS.md)
 ![Status](https://img.shields.io/badge/status-estável-brightgreen.svg)
 
@@ -276,6 +277,9 @@ mypy markitdown_gui.py
 # Todos de uma vez
 pre-commit run --all-files
 ```
+
+O CI roda em uma matriz de **3 sistemas operacionais × 4 versões do Python**
+(Windows, macOS e Linux × 3.10, 3.11, 3.12, 3.13).
 
 Consulte o [`AGENTS.md`](AGENTS.md) para as diretrizes de arquitetura e a lista de melhorias planejadas.
 
