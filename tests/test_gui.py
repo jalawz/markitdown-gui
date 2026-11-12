@@ -26,14 +26,25 @@ spec.loader.exec_module(mod)
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def gui_root():
-    """Raiz do Tk, pulada se nao houver display."""
+    """Raiz do Tk, pulada se nao houver display.
+
+    No macOS, `destroy()` sem `mainloop()` pode travar. Por isso chamamos
+    `quit()` antes e protegemos com timeout.
+    """
     tk = pytest.importorskip("tkinter")
     try:
         root = tk.Tk()
     except tk.TclError as exc:
         pytest.skip(f"sem display disponivel: {exc}")
+
     root.withdraw()
     yield root
+
+    try:
+        root.update()
+        root.quit()
+    except tk.TclError:
+        pass
     try:
         root.destroy()
     except tk.TclError:

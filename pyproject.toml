@@ -51,7 +51,10 @@ check_untyped_defs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --timeout=180 --timeout-method=thread"
+markers = [
+    "slow: testes que demoram mais de 10 segundos",
+]
 
 [tool.coverage.run]
 source = ["markitdown_gui"]
