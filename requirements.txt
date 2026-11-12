@@ -1,0 +1,8 @@
+# MarkItDown GUI - Dependencias de execucao
+#
+# Windows:   pip install -r requirements.txt
+# macOS:     pip3 install -r requirements.txt
+# Linux:     pip3 install -r requirements.txt
+#            sudo apt-get install python3-tk   (necessario no Linux)
+
+markitdown[all]>=0.1.9

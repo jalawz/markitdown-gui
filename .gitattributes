@@ -1,0 +1,26 @@
+# Normaliza quebras de linha no repositorio.
+# Arquivos de texto: LF no repo, CRLF no checkout do Windows.
+* text=auto eol=lf
+
+# Scripts Unix precisam de LF e permissao de execucao.
+*.sh text eol=lf
+run.sh text eol=lf
+
+# Script do Windows precisa de CRLF.
+*.bat text eol=crlf
+run.bat text eol=crlf
+
+# Binarios.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.exe binary
+*.zip binary
+*.tar.gz binary
+
+# GitHub linguist.
+*.md linguist-documentation
+docs/* linguist-documentation
