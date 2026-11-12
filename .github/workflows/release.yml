@@ -4,11 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Versao (ex: 1.2.0)"
-        required: true
 
 permissions:
   contents: write
@@ -17,6 +12,7 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -43,25 +39,25 @@ jobs:
 
       - name: Build executavel
         run: |
-          pyinstaller --noconfirm --onefile --name markitdown-gui \
-            --collect-all magika \
-            --hidden-import=markitdown \
-            markitdown_gui.py
+          pyinstaller --noconfirm --onefile --name markitdown-gui --collect-all magika --hidden-import=markitdown --hidden-import=markitdown.converters markitdown_gui.py
 
       - name: Comprimir
         shell: bash
         run: |
-          cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            zip -r markitdown-gui-windows.zip markitdown-gui.exe
+            (cd dist && zip -r ../markitdown-gui-windows.zip markitdown-gui.exe)
           else
-            tar -czf markitdown-gui-${{ runner.os }}.tar.gz markitdown-gui
+            tar -czf "dist/markitdown-gui-${{ runner.os }}.tar.gz" -C dist markitdown-gui
           fi
+          ls -lh dist/ || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/*
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: warn
 
   release:
     needs: build
