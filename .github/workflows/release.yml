@@ -43,13 +43,7 @@ jobs:
 
       - name: Comprimir
         shell: bash
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            (cd dist && zip -r ../markitdown-gui-windows.zip markitdown-gui.exe)
-          else
-            tar -czf "dist/markitdown-gui-${{ runner.os }}.tar.gz" -C dist markitdown-gui
-          fi
-          ls -lh dist/ || true
+        run: python scripts/package.py
 
       - uses: actions/upload-artifact@v4
         with:
