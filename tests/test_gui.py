@@ -338,6 +338,8 @@ class TestThreadSafety:
             "_progress_reset",
             "_write_log",
             "_clear_log",
+            "_load_config",
+            "_save_config",
         }
 
         offenders = []
