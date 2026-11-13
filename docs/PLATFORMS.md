@@ -177,20 +177,50 @@ Este é o gotcha mais importante para quem escreve testes nesta aplicação.
 | Método | Comportamento | macOS |
 |---|---|---|
 | `root.update()` | Processa **todos** os eventos, incluindo Apple Events | ❌ **trava** |
-| `root.update_idletasks()` | Processa apenas tarefas ociosas | ✅ seguro |
+| `root.update_idletasks()` | Processa apenas tarefas ociosas | ⚠️ **não executa `after(0, ...)`** |
+| `mainloop()` + polling | Event loop real, com `quit()` no fim | ✅ correto |
 
 O `update` completo do Tcl no macOS bloqueia esperando eventos do sistema.
-Por isso **use sempre `update_idletasks()`** nos testes.
+Por isso **não use `update()`**.
 
-A boa notícia: `after(0, ...)` no Tk é equivalente a `after idle`, então
-`update_idletasks()` executa os callbacks agendados pelo padrão `_ui_call`.
+Mas `update_idletasks()` também não serve: ela não executa timers
+`after(0, ...)` — que é exatamente o mecanismo usado pelo padrão `_ui_call`
+da aplicação.
+
+**A solução é o helper `run_until()`**, que roda o event loop de verdade:
+
+```python
+def run_until(root, predicate, timeout=60.0):
+    """Roda o event loop do Tk ate predicate() virar verdadeiro."""
+    state = {"ok": False, "elapsed": 0.0}
+
+    def poll():
+        if predicate():
+            state["ok"] = True
+            root.quit()
+            return
+        state["elapsed"] += 0.05
+        if state["elapsed"] > timeout:
+            root.quit()
+            return
+        root.after(50, poll)
+
+    root.after(50, poll)
+    root.mainloop()
+    return state["ok"]
+```
+
+Uso típico:
 
 ```python
 # ERRADO — trava no macOS
 gui_root.update()
 
-# CERTO
+# ERRADO — nao dispara o after(0) do _ui_call
 gui_root.update_idletasks()
+
+# CERTO
+assert run_until(gui_root, lambda: not app._busy)
 ```
 
 Além disso, `destroy()` sem `mainloop()` pode bloquear no macOS. O fixture

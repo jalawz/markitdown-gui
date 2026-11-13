@@ -21,6 +21,7 @@
 - [Linha de comando](#linha-de-comando)
 - [Atalhos de teclado](#atalhos-de-teclado)
 - [Estrutura do projeto](#estrutura-do-projeto)
+- [Changelog](#changelog)
 - [Desenvolvimento](#desenvolvimento)
 - [Solução de problemas](#solução-de-problemas)
 - [Contribuindo](#contribuindo)
@@ -244,7 +245,8 @@ markitdown-gui/
 ├── pyproject.toml           # Metadados e configuração de ferramentas
 ├── run.bat                  # Atalho Windows (sem console)
 ├── run.sh                   # Atalho macOS/Linux
-├── AGENTS.md                # Diretrizes para agentes de IA eQUIRED
+├── AGENTS.md                # Diretrizes para agentes de IA + backlog
+├── CHANGELOG.md             # Histórico de mudanças por versão
 ├── CONTRIBUTING.md          # Guia de contribuição
 ├── LICENSE                  # MIT
 ├── docs/
@@ -256,6 +258,15 @@ markitdown-gui/
         ├── ci.yml           # CI: lint + testes (matrix OS × Python)
         └── release.yml      # Empacotamento com PyInstaller
 ```
+
+---
+
+## Changelog
+
+O histórico completo de mudanças está em [`CHANGELOG.md`](CHANGELOG.md).
+
+O plano de trabalho futuro — com prioridades, soluções, riscos e critérios de
+aceite — está em [`AGENTS.md`](AGENTS.md), seção 5.
 
 ---
 
