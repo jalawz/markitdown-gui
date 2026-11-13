@@ -18,6 +18,7 @@ Requisitos:
 Este software e distribuido sob a licenca MIT.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -31,6 +32,8 @@ from tkinter import font as tkfont
 
 APP_NAME = "MarkItDown GUI"
 APP_VERSION = "1.1.0"
+CONFIG_DIR_NAME = "markitdown-gui"
+CONFIG_FILE_NAME = "config.json"
 
 # Tipos de arquivo suportados pelo MarkItDown
 FILE_FILTERS = [
@@ -63,6 +66,44 @@ FONT_CANDIDATES = {
 }
 
 _FONT_CACHE: list[str] = []
+
+
+def get_config_dir() -> Path:
+    """Retorna o diretorio de configuracao por plataforma."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return base / CONFIG_DIR_NAME
+
+
+def get_config_path() -> Path:
+    """Retorna o caminho completo do arquivo de configuracao."""
+    return get_config_dir() / CONFIG_FILE_NAME
+
+
+def load_config() -> dict:
+    """Carrega a configuracao do arquivo JSON. Retorna dict vazio se nao existir ou invalido."""
+    path = get_config_path()
+    try:
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def save_config(config: dict) -> None:
+    """Salva a configuracao no arquivo JSON."""
+    path = get_config_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        # Falha silenciosa: configuracao e apenas conveniencia
+        pass
 
 
 def pick_font_family():
@@ -178,10 +219,31 @@ class MarkItDownGUI:
 
         self._build_ui()
         self._bind_keys()
+
+        # Carrega configuracao salva (diretorios recentes)
+        self._load_config()
+
         self._apply_cli_args(cli_args)
 
         if auto_start and cli_args:
             self.root.after(400, self.convert_file)
+
+    def _load_config(self):
+        """Carrega configuracao salva e preenche campos se nao ha args CLI."""
+        config = load_config()
+        if not self.src_var.get().strip() and config.get("last_source_dir"):
+            self.src_var.set(config["last_source_dir"])
+        if not self.dst_var.get().strip() and config.get("last_dest_dir"):
+            self.dst_var.set(config["last_dest_dir"])
+
+    def _save_config(self, src_dir: str | None = None, dst_dir: str | None = None):
+        """Salva configuracao com diretorios atualizados."""
+        config = load_config()
+        if src_dir:
+            config["last_source_dir"] = src_dir
+        if dst_dir:
+            config["last_dest_dir"] = dst_dir
+        save_config(config)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -425,12 +487,14 @@ class MarkItDownGUI:
             self.dst_var.set(str(Path(cli_args[0]).with_suffix(".md")))
 
     # --------------------------------------------------------------- Acoes
+    # --------------------------------------------------------------- Acoes
     def browse_file(self):
         path = filedialog.askopenfilename(
             title="Selecionar arquivo para converter", filetypes=FILE_FILTERS
         )
         if path:
             self.src_var.set(path)
+            self._save_config(src_dir=str(Path(path).parent))
             if not self.dst_var.get().strip():
                 self.dst_var.set(str(Path(path).with_suffix(".md")))
 
@@ -450,6 +514,7 @@ class MarkItDownGUI:
         )
         if path:
             self.dst_var.set(path)
+            self._save_config(dst_dir=str(Path(path).parent))
 
     def convert_file(self):
         if self._busy:
@@ -527,6 +592,9 @@ class MarkItDownGUI:
             self._last_output = dst_path
             self._ui_call(lambda: self._enable_open_button(True))
             self._ui_call(lambda: self._on_success(dst_path, chars, size_kb))
+
+            # Salva os diretorios usados para proxima vez
+            self._save_config(src_dir=str(src_path.parent), dst_dir=str(dst_path.parent))
 
         except Exception as exc:
             detail = "".join(traceback.format_exception_only(type(exc), exc)).strip()
@@ -678,6 +746,13 @@ def main():
             print(f"Erro na conversao: {exc}")
             return 1
         print(f"OK: {len(result.markdown):,} caracteres -> {dst}")
+
+        # Salva os diretorios usados para proxima vez
+        try:
+            save_config({"last_source_dir": str(src.parent), "last_dest_dir": str(dst.parent)})
+        except Exception:
+            pass  # Falha silenciosa: configuracao e apenas conveniencia
+
         return 0
 
     try:
