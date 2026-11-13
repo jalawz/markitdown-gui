@@ -8,7 +8,6 @@ nao ha display disponivel (CI headless).
 
 import importlib.util
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -28,8 +27,11 @@ spec.loader.exec_module(mod)
 def gui_root():
     """Raiz do Tk, pulada se nao houver display.
 
-    No macOS, `destroy()` sem `mainloop()` pode travar. Por isso chamamos
-    `quit()` antes e protegemos com timeout.
+    Notas de portabilidade:
+    - No macOS, `update()` bloqueia (processa a fila de Apple Events).
+      Use o helper `run_until()`, que roda o event loop de verdade.
+    - `destroy()` sem `mainloop()` pode travar; por isso chamamos `quit()`
+      antes.
     """
     tk = pytest.importorskip("tkinter")
     try:
@@ -41,7 +43,6 @@ def gui_root():
     yield root
 
     try:
-        root.update()
         root.quit()
     except tk.TclError:
         pass
@@ -49,6 +50,30 @@ def gui_root():
         root.destroy()
     except tk.TclError:
         pass
+
+
+def run_until(root, predicate, timeout=60.0):
+    """Roda o event loop do Tk ate `predicate()` virar verdadeiro.
+
+    Portavel e seguro: usa `mainloop()` (em vez de `update()`, que trava no
+    macOS) e `quit()` para encerrar sem travar o `destroy()`.
+    """
+    state = {"ok": False, "elapsed": 0.0}
+
+    def poll():
+        if predicate():
+            state["ok"] = True
+            root.quit()
+            return
+        state["elapsed"] += 0.05
+        if state["elapsed"] > timeout:
+            root.quit()
+            return
+        root.after(50, poll)
+
+    root.after(50, poll)
+    root.mainloop()
+    return state["ok"]
 
 
 # --------------------------------------------------------------------------- #
@@ -367,10 +392,7 @@ class TestConversion:
         monkeypatch.setattr(mod.messagebox, "showerror", lambda *a, **k: None)
 
         app.convert_file()
-        deadline = time.time() + 60
-        while app._busy and time.time() < deadline:
-            gui_root.update()
-            time.sleep(0.05)
+        assert run_until(gui_root, lambda: not app._busy), "conversao nao terminou"
 
         assert dst.exists(), "arquivo de saida nao foi criado"
         conteudo = dst.read_text(encoding="utf-8")
@@ -387,10 +409,7 @@ class TestConversion:
         monkeypatch.setattr(mod.messagebox, "showerror", lambda *a, **k: None)
 
         app.convert_file()
-        deadline = time.time() + 60
-        while app._busy and time.time() < deadline:
-            gui_root.update()
-            time.sleep(0.05)
+        assert run_until(gui_root, lambda: not app._busy), "conversao nao terminou"
 
         assert dst.exists()
         assert dst.parent.is_dir()
@@ -424,23 +443,23 @@ class TestLog:
     def test_log_registra_mensagens(self, gui_root):
         app = mod.MarkItDownGUI(gui_root)
         app._log("mensagem de teste", "info")
-        gui_root.update()
+        assert run_until(gui_root, lambda: "mensagem de teste" in app.log.get("1.0", "end"))
         conteudo = app.log.get("1.0", "end")
         assert "mensagem de teste" in conteudo
 
     def test_log_colorido_por_nivel(self, gui_root):
         app = mod.MarkItDownGUI(gui_root)
         app._log("erro simulado", "erro")
-        gui_root.update()
+        assert run_until(gui_root, lambda: "erro simulado" in app.log.get("1.0", "end"))
         conteudo = app.log.get("1.0", "end")
         assert "erro simulado" in conteudo
 
     def test_reset_limpa_log(self, gui_root):
         app = mod.MarkItDownGUI(gui_root)
         app._log("para limpar", "info")
-        gui_root.update()
+        assert run_until(gui_root, lambda: "para limpar" in app.log.get("1.0", "end"))
         app.reset_all()
-        gui_root.update()
+        assert run_until(gui_root, lambda: app.log.get("1.0", "end").strip() == "")
         assert app.log.get("1.0", "end").strip() == ""
 
 

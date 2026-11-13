@@ -255,6 +255,13 @@ Hoje a cobertura é mínima.
 > **Dica para agentes:** ao testar a GUI, use `root.after(...)` + `mainloop()`.
 > Chamar `root.update()` em loop não roda o event loop de verdade e o
 > `root.after()` falha com `RuntimeError: main thread is not in main loop`.
+>
+> **Armadilha do macOS:** `root.update()` **trava** no macOS, porque o
+> `update` completo do Tcl processa a fila de Apple Events e bloqueia
+> esperando eventos do sistema. Use **sempre** `root.update_idletasks()`,
+> que executa apenas tarefas ociosas — e já executa callbacks agendados
+> com `after(0, ...)`, que é o que o código usa. Foi exatamente esse
+> detalhe que travou o CI no macOS.
 
 ---
 

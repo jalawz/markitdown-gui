@@ -169,3 +169,44 @@ Para rodar a suíte completa localmente com display virtual no Linux:
 sudo apt-get install xvfb
 xvfb-run -a pytest tests/ -v
 ```
+
+### ⚠️ `update()` trava no macOS
+
+Este é o gotcha mais importante para quem escreve testes nesta aplicação.
+
+| Método | Comportamento | macOS |
+|---|---|---|
+| `root.update()` | Processa **todos** os eventos, incluindo Apple Events | ❌ **trava** |
+| `root.update_idletasks()` | Processa apenas tarefas ociosas | ✅ seguro |
+
+O `update` completo do Tcl no macOS bloqueia esperando eventos do sistema.
+Por isso **use sempre `update_idletasks()`** nos testes.
+
+A boa notícia: `after(0, ...)` no Tk é equivalente a `after idle`, então
+`update_idletasks()` executa os callbacks agendados pelo padrão `_ui_call`.
+
+```python
+# ERRADO — trava no macOS
+gui_root.update()
+
+# CERTO
+gui_root.update_idletasks()
+```
+
+Além disso, `destroy()` sem `mainloop()` pode bloquear no macOS. O fixture
+chama `quit()` antes de `destroy()`.
+
+---
+
+## Cobertura por SO
+
+A matriz do CI roda **3 SOs × 4 versões do Python**:
+
+| SO | Py 3.10 | Py 3.11 | Py 3.12 | Py 3.13 |
+|---|:---:|:---:|:---:|:---:|
+| Windows | ✅ | — | ✅ | ✅ |
+| Linux | ✅ | ✅ | ✅ | — |
+| macOS | ✅ | — | ✅ | — |
+
+Testes que dependem de display são pulados automaticamente onde não há
+window server (Linux headless).
