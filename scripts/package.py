@@ -34,8 +34,10 @@ def main() -> int:
             print(f"ERRO: {target} nao encontrado.", file=sys.stderr)
             return 1
         archive = shutil.make_archive(
-            str(DIST / f"{EXE_NAME}-windows"), "zip",
-            root_dir=str(target.parent), base_dir=target.name,
+            str(DIST / f"{EXE_NAME}-windows"),
+            "zip",
+            root_dir=str(target.parent),
+            base_dir=target.name,
         )
     else:
         binary = DIST / EXE_NAME
@@ -44,8 +46,10 @@ def main() -> int:
             return 1
         runner_os = os.environ.get("RUNNER_OS", "linux")
         archive = shutil.make_archive(
-            str(DIST / f"{EXE_NAME}-{runner_os}"), "gztar",
-            root_dir=str(binary.parent), base_dir=binary.name,
+            str(DIST / f"{EXE_NAME}-{runner_os}"),
+            "gztar",
+            root_dir=str(binary.parent),
+            base_dir=binary.name,
         )
 
     size_mb = Path(archive).stat().st_size / (1024 * 1024)
