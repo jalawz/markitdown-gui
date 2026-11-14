@@ -250,20 +250,22 @@ class TestValidation:
         monkeypatch.setattr(
             mod.messagebox, "showerror", lambda *a, **k: called.setdefault("erro", a)
         )
-        app.convert_file()
+        app.convert_queue()
         assert "erro" in called
 
     def test_sem_destino_mostra_erro(self, gui_root, monkeypatch, tmp_path):
+        # Testa erro quando a fila esta vazia
         src = tmp_path / "a.pdf"
         src.write_bytes(b"%PDF-1.4\n")
-        app = mod.MarkItDownGUI(gui_root, [str(src)])
+        app = mod.MarkItDownGUI(gui_root)
         app.dst_var.set("")
         called = {}
         monkeypatch.setattr(
             mod.messagebox, "showerror", lambda *a, **k: called.setdefault("erro", a)
         )
-        app.convert_file()
+        app.convert_queue()
         assert "erro" in called
+        assert "fila esta vazia" in str(called["erro"]).lower()
 
     def test_origem_inexistente_mostra_erro(self, gui_root, monkeypatch, tmp_path):
         app = mod.MarkItDownGUI(gui_root)
@@ -273,7 +275,7 @@ class TestValidation:
         monkeypatch.setattr(
             mod.messagebox, "showerror", lambda *a, **k: called.setdefault("erro", a)
         )
-        app.convert_file()
+        app.add_to_queue()
         assert "erro" in called
         assert "nao encontrado" in str(called["erro"]).lower()
 
@@ -328,6 +330,12 @@ class TestThreadSafety:
             "browse_file",
             "browse_dest",
             "convert_file",
+            "convert_queue",
+            "add_to_queue",
+            "remove_from_queue",
+            "clear_queue",
+            "cancel_queue",
+            "_finish_queue_internal",
             "reset_all",
             "on_closing",
             "_ui_call",
@@ -393,7 +401,7 @@ class TestConversion:
         monkeypatch.setattr(mod.messagebox, "showinfo", lambda *a, **k: None)
         monkeypatch.setattr(mod.messagebox, "showerror", lambda *a, **k: None)
 
-        app.convert_file()
+        app.convert_queue()
         assert run_until(gui_root, lambda: not app._busy), "conversao nao terminou"
 
         assert dst.exists(), "arquivo de saida nao foi criado"
@@ -410,7 +418,7 @@ class TestConversion:
         monkeypatch.setattr(mod.messagebox, "showinfo", lambda *a, **k: None)
         monkeypatch.setattr(mod.messagebox, "showerror", lambda *a, **k: None)
 
-        app.convert_file()
+        app.convert_queue()
         assert run_until(gui_root, lambda: not app._busy), "conversao nao terminou"
 
         assert dst.exists()

@@ -217,6 +217,18 @@ class MarkItDownGUI:
         enable_windows_dpi_awareness()
         enable_windows_dark_titlebar(self.root, dark=False)
 
+        # Inicializa variaveis de controle
+        self.src_var = tk.StringVar()
+        self.dst_var = tk.StringVar()
+        self.plugins_var = tk.BooleanVar(value=False)
+        self.keep_uris_var = tk.BooleanVar(value=False)
+
+        # Inicializa fila de conversao
+        self._queue = []
+        self._queue_index = 0
+        self._total_files = 0
+        self._cancel_requested = False
+
         self._build_ui()
         self._bind_keys()
 
@@ -269,32 +281,59 @@ class MarkItDownGUI:
             font=(self.family, 9),
         ).pack(anchor="w", padx=20, pady=(0, 14))
 
-        # Corpo: origem, destino e opcoes
+        # Corpo: fila de arquivos, opcoes
         body = tk.Frame(container, bg="#f4f6f7", padx=22, pady=18)
-        body.pack(fill="x")
+        body.pack(fill="both", expand=True)
         body.columnconfigure(1, weight=1)
 
-        # --- Origem ---
+        # --- Fila de arquivos ---
         tk.Label(
-            body, text="Arquivo de origem:", bg="#f4f6f7", font=(self.family, 9, "bold"), anchor="w"
-        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
-        self.src_var = tk.StringVar()
-        tk.Entry(body, textvariable=self.src_var, font=("Consolas", 9), relief="solid", bd=1).grid(
-            row=0, column=1, sticky="ew", padx=(10, 8), pady=(0, 10)
-        )
-        self.src_btn = self._button(body, "Procurar...", self.browse_file, "#2980b9")
-        self.src_btn.grid(row=0, column=2, pady=(0, 10))
+            body, text="Fila de conversao:", bg="#f4f6f7", font=(self.family, 9, "bold"), anchor="w"
+        ).grid(row=0, column=0, sticky="nw", pady=(0, 6))
 
-        # --- Destino ---
-        tk.Label(
-            body, text="Salvar em:", bg="#f4f6f7", font=(self.family, 9, "bold"), anchor="w"
-        ).grid(row=1, column=0, sticky="w", pady=(0, 10))
-        self.dst_var = tk.StringVar()
-        tk.Entry(body, textvariable=self.dst_var, font=("Consolas", 9), relief="solid", bd=1).grid(
-            row=1, column=1, sticky="ew", padx=(10, 8), pady=(0, 10)
+        # Frame da lista com scrollbar
+        queue_frame = tk.Frame(body, bg="#f4f6f7")
+        queue_frame.grid(row=0, column=1, columnspan=2, sticky="nsew", padx=(10, 0), pady=(0, 10))
+        queue_frame.columnconfigure(0, weight=1)
+        queue_frame.rowconfigure(0, weight=1)
+
+        self.queue_listbox = tk.Listbox(
+            queue_frame,
+            height=6,
+            font=("Consolas", 9),
+            relief="solid",
+            bd=1,
+            selectmode=tk.EXTENDED,
+            activestyle="none",
         )
-        self.dst_btn = self._button(body, "Procurar...", self.browse_dest, "#2980b9")
-        self.dst_btn.grid(row=1, column=2, pady=(0, 10))
+        self.queue_listbox.grid(row=0, column=0, sticky="nsew")
+
+        queue_scrollbar = ttk.Scrollbar(
+            queue_frame, orient="vertical", command=self.queue_listbox.yview
+        )
+        queue_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.queue_listbox.configure(yscrollcommand=queue_scrollbar.set)
+
+        # Botoes da fila
+        queue_btns = tk.Frame(body, bg="#f4f6f7")
+        queue_btns.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(4, 0))
+
+        self.add_to_queue_btn = self._button(
+            queue_btns, "Adicionar a fila", self.add_to_queue, "#2980b9"
+        )
+        self.add_to_queue_btn.pack(side="left", padx=(0, 6))
+
+        # Aliases para compatibilidade com testes antigos
+        self.src_btn = self.add_to_queue_btn
+        self.dst_btn = self.add_to_queue_btn
+
+        self.remove_from_queue_btn = self._button(
+            queue_btns, "Remover selecionados", self.remove_from_queue, "#e67e22"
+        )
+        self.remove_from_queue_btn.pack(side="left", padx=6)
+
+        self.clear_queue_btn = self._button(queue_btns, "Limpar fila", self.clear_queue, "#e74c3c")
+        self.clear_queue_btn.pack(side="left", padx=6)
 
         # --- Opcoes ---
         opts = tk.LabelFrame(
@@ -352,8 +391,23 @@ class MarkItDownGUI:
         prog_box.grid(row=0, column=0, sticky="ew")
         prog_box.columnconfigure(0, weight=1)
 
-        self.progress = ttk.Progressbar(prog_box, mode="indeterminate", length=600)
-        self.progress.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        # Progress bar com label de porcentagem
+        prog_top = tk.Frame(prog_box, bg="#f4f6f7")
+        prog_top.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        prog_top.columnconfigure(0, weight=1)
+
+        self.progress = ttk.Progressbar(prog_top, mode="determinate", length=500)
+        self.progress.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        self.progress_pct_var = tk.StringVar(value="0%")
+        tk.Label(
+            prog_top,
+            textvariable=self.progress_pct_var,
+            bg="#f4f6f7",
+            font=(self.family, 9, "bold"),
+            fg="#2c3e50",
+            width=5,
+        ).grid(row=0, column=1, sticky="e")
 
         self.status_var = tk.StringVar(value="Pronto para converter.")
         tk.Label(
@@ -403,8 +457,8 @@ class MarkItDownGUI:
 
         self.convert_btn = tk.Button(
             buttons,
-            text="Converter",
-            command=self.convert_file,
+            text="Converter fila",
+            command=self.convert_queue,
             bg="#27ae60",
             fg="white",
             font=(self.family, 11, "bold"),
@@ -417,6 +471,24 @@ class MarkItDownGUI:
             bd=0,
         )
         self.convert_btn.pack(side="left", padx=(0, 8))
+
+        self.cancel_btn = tk.Button(
+            buttons,
+            text="Cancelar",
+            command=self.cancel_queue,
+            bg="#e74c3c",
+            fg="white",
+            font=(self.family, 11, "bold"),
+            relief="flat",
+            padx=26,
+            pady=9,
+            cursor="hand2",
+            state="disabled",
+            activebackground="#c0392b",
+            activeforeground="white",
+            bd=0,
+        )
+        self.cancel_btn.pack(side="left", padx=8)
 
         self.reset_btn = tk.Button(
             buttons,
@@ -480,11 +552,16 @@ class MarkItDownGUI:
         """Permite iniciar ja com origem (e opcionalmente destino) pre-preenchidos."""
         if not cli_args:
             return
-        self.src_var.set(str(cli_args[0]))
-        if len(cli_args) > 1:
-            self.dst_var.set(str(cli_args[1]))
-        else:
-            self.dst_var.set(str(Path(cli_args[0]).with_suffix(".md")))
+        src = Path(cli_args[0]).expanduser()
+        dst = Path(cli_args[1]).expanduser() if len(cli_args) > 1 else src.with_suffix(".md")
+
+        self.src_var.set(str(src))
+        self.dst_var.set(str(dst))
+
+        # Adiciona a fila se o arquivo existe
+        if src.is_file():
+            self._queue.append((src, dst))
+            self._update_queue_display()
 
     # --------------------------------------------------------------- Acoes
     # --------------------------------------------------------------- Acoes
@@ -516,10 +593,9 @@ class MarkItDownGUI:
             self.dst_var.set(path)
             self._save_config(dst_dir=str(Path(path).parent))
 
-    def convert_file(self):
-        if self._busy:
-            return
-
+    # --------------------------------------------------------------- Fila
+    def add_to_queue(self):
+        """Adiciona o arquivo atual (origem/destino) a fila de conversao."""
         src = self.src_var.get().strip().strip('"')
         dst = self.dst_var.get().strip().strip('"')
 
@@ -537,23 +613,127 @@ class MarkItDownGUI:
             messagebox.showerror("Erro", f"Arquivo de origem nao encontrado:\n{src_path}")
             return
 
-        try:
-            dst_path.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as exc:
-            messagebox.showerror("Erro", f"Nao foi possivel criar o destino:\n{exc}")
+        # Adiciona a fila
+        self._queue.append((src_path, dst_path))
+        self._update_queue_display()
+
+        # Limpa campos para proximo
+        self.src_var.set("")
+        self.dst_var.set("")
+        self.src_btn.focus_set()
+
+    def remove_from_queue(self):
+        """Remove itens selecionados da fila."""
+        selection = self.queue_listbox.curselection()
+        if not selection:
+            return
+        # Remove do fim pro inicio para nao baguncar indices
+        for idx in reversed(selection):
+            del self._queue[idx]
+        self._update_queue_display()
+
+    def clear_queue(self):
+        """Limpa toda a fila."""
+        self._queue.clear()
+        self._update_queue_display()
+
+    def _update_queue_display(self):
+        """Atualiza a listbox com o conteudo da fila."""
+        self.queue_listbox.delete(0, tk.END)
+        for src, dst in self._queue:
+            self.queue_listbox.insert(tk.END, f"{src.name} -> {dst.name}")
+
+    # --------------------------------------------------------------- Acoes
+    def convert_queue(self):
+        """Inicia a conversao da fila de arquivos."""
+        if self._busy:
             return
 
+        if not self._queue:
+            messagebox.showerror("Erro", "A fila esta vazia. Adicione arquivos primeiro.")
+            return
+
+        # Valida que todos os itens tem destino
+        for _src, dst in self._queue:
+            if not str(dst).strip():
+                messagebox.showerror(
+                    "Erro", "Todos os arquivos da fila devem ter um destino definido."
+                )
+                return
+
+        # Desabilita botoes durante a conversao
         self._set_busy(True)
-        self.progress.configure(mode="indeterminate", value=0)
-        self.progress.start(12)
-        self._set_status("Carregando o motor de conversao...")
-        self._log(f"Inicio: {src_path.name} -> {dst_path.name}", "info")
+        self.cancel_btn.config(state="normal")
+        self.convert_btn.config(state="disabled")
+
+        self._cancel_requested = False
+        self._queue_index = 0
+        self._total_files = len(self._queue)
+
+        # Configura progress bar
+        self.progress.configure(mode="determinate", maximum=len(self._queue), value=0)
+        self.progress_pct_var.set("0%")
+
+        self._process_next_in_queue()
+
+    def cancel_queue(self):
+        """Cancela a conversao da fila atual."""
+        if not self._busy:
+            return
+        self._cancel_requested = True
+        self._log("Cancelamento solicitado pelo usuario...", "erro")
+        self._set_status("Cancelando...")
+
+    def _process_next_in_queue(self):
+        """Processa o proximo arquivo da fila."""
+        if self._cancel_requested or self._queue_index >= len(self._queue):
+            self._finish_queue()
+            return
+
+        src_path, dst_path = self._queue[self._queue_index]
+
+        # Atualiza UI
+        self.progress.configure(value=self._queue_index)
+        self.progress_pct_var.set(f"{int((self._queue_index / len(self._queue)) * 100)}%")
+        self._set_status(f"Convertendo {self._queue_index + 1}/{len(self._queue)}: {src_path.name}")
+        self._log(f"Iniciando {self._queue_index + 1}/{len(self._queue)}: {src_path.name}", "info")
+
+        # Seleciona o item na listbox
+        self.queue_listbox.selection_clear(0, tk.END)
+        self.queue_listbox.selection_set(self._queue_index)
+        self.queue_listbox.see(self._queue_index)
 
         opts = {
             "enable_plugins": bool(self.plugins_var.get()),
             "keep_data_uris": bool(self.keep_uris_var.get()),
         }
+
         threading.Thread(target=self._worker, args=(src_path, dst_path, opts), daemon=True).start()
+
+    def _finish_queue(self):
+        """Finaliza o processamento da fila."""
+        self._ui_call(self._finish_queue_internal)
+
+    def _finish_queue_internal(self):
+        """Finaliza o processamento da fila (chamado na thread principal)."""
+        self._set_busy(False)
+        self.cancel_btn.config(state="disabled")
+        self.convert_btn.config(state="normal")
+
+        if self._cancel_requested:
+            self.progress.configure(value=0)
+            self.progress_pct_var.set("0%")
+            self._set_status("Fila cancelada.")
+            self._log("Fila cancelada pelo usuario.", "erro")
+        else:
+            self.progress.configure(value=len(self._queue))
+            self.progress_pct_var.set("100%")
+            self._set_status(f"Fila concluida: {len(self._queue)} arquivo(s) processado(s).")
+            self._log(f"Fila finalizada: {len(self._queue)} arquivo(s) processado(s).", "ok")
+
+        self._queue.clear()
+        self._update_queue_display()
+        self._enable_open_button(False)
 
     def _worker(self, src_path, dst_path, opts):
         try:
@@ -580,6 +760,7 @@ class MarkItDownGUI:
             result = md.convert(str(src_path), keep_data_uris=opts["keep_data_uris"])
 
             self._set_status("Salvando o resultado...")
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
             dst_path.write_text(result.markdown, encoding="utf-8")
 
             chars = len(result.markdown)
