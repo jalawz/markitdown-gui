@@ -30,6 +30,13 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
 
+try:
+    from tkinterdnd2 import DND_FILES
+
+    HAS_DND = True
+except ImportError:
+    HAS_DND = False
+
 APP_NAME = "MarkItDown GUI"
 APP_VERSION = "1.1.0"
 CONFIG_DIR_NAME = "markitdown-gui"
@@ -238,7 +245,75 @@ class MarkItDownGUI:
         self._apply_cli_args(cli_args)
 
         if auto_start and cli_args:
-            self.root.after(400, self.convert_file)
+            self.root.after(400, self.convert_queue)
+
+        # Configura drag-and-drop se disponivel
+        if HAS_DND:
+            self._setup_drag_drop()
+
+    def _setup_drag_drop(self):
+        """Configura drag-and-drop para a janela e campos de entrada."""
+        try:
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind("<<Drop>>", self._on_drop)
+
+            # Torna os campos de entrada tambem alvos de drop
+            if hasattr(self, "src_entry"):
+                self.src_entry.drop_target_register(DND_FILES)
+                self.src_entry.dnd_bind("<<Drop>>", self._on_drop)
+        except Exception:
+            pass
+
+    def _on_drop(self, event):
+        """Manipula eventos de drag-and-drop."""
+        files = self.root.tk.splitlist(event.data)
+        if not files:
+            return
+
+        # Filtra apenas arquivos suportados
+        valid_files = []
+        for f in files:
+            path = Path(f)
+            if path.is_file() and path.suffix.lower() in {
+                ".pdf",
+                ".docx",
+                ".doc",
+                ".pptx",
+                ".ppt",
+                ".xlsx",
+                ".xls",
+                ".html",
+                ".htm",
+                ".csv",
+                ".json",
+                ".xml",
+                ".txt",
+                ".md",
+                ".epub",
+                ".ipynb",
+                ".msg",
+                ".wav",
+                ".mp3",
+                ".jpg",
+                ".jpeg",
+                ".png",
+                ".gif",
+                ".bmp",
+            }:
+                valid_files.append(path)
+
+        if not valid_files:
+            self._log("Nenhum arquivo valido foi solto.", "erro")
+            return
+
+        # Adiciona arquivos validos a fila
+        for path in valid_files:
+            src_path = path
+            dst_path = path.with_suffix(".md")
+            self._queue.append((src_path, dst_path))
+
+        self._update_queue_display()
+        self._log(f"{len(valid_files)} arquivo(s) adicionado(s) via drag-and-drop.", "info")
 
     def _load_config(self):
         """Carrega configuracao salva e preenche campos se nao ha args CLI."""
@@ -454,6 +529,11 @@ class MarkItDownGUI:
         # --- Botoes ---
         buttons = tk.Frame(container, bg="#f4f6f7", pady=16)
         buttons.pack(fill="x")
+        buttons.columnconfigure(0, weight=1)
+        buttons.columnconfigure(1, weight=1)
+        buttons.columnconfigure(2, weight=1)
+        buttons.columnconfigure(2, weight=1)
+        buttons.columnconfigure(2, weight=1)
 
         self.convert_btn = tk.Button(
             buttons,
@@ -470,7 +550,7 @@ class MarkItDownGUI:
             activeforeground="white",
             bd=0,
         )
-        self.convert_btn.pack(side="left", padx=(0, 8))
+        self.convert_btn.grid(row=0, column=0, padx=(0, 8), sticky="ew")
 
         self.cancel_btn = tk.Button(
             buttons,
@@ -488,7 +568,7 @@ class MarkItDownGUI:
             activeforeground="white",
             bd=0,
         )
-        self.cancel_btn.pack(side="left", padx=8)
+        self.cancel_btn.grid(row=0, column=1, padx=8, sticky="ew")
 
         self.reset_btn = tk.Button(
             buttons,
@@ -505,7 +585,7 @@ class MarkItDownGUI:
             activeforeground="white",
             bd=0,
         )
-        self.reset_btn.pack(side="left", padx=8)
+        self.reset_btn.grid(row=0, column=2, padx=8, sticky="ew")
 
         self.open_btn = tk.Button(
             buttons,
@@ -523,7 +603,7 @@ class MarkItDownGUI:
             activeforeground="white",
             bd=0,
         )
-        self.open_btn.pack(side="left", padx=8)
+        self.open_btn.grid(row=0, column=3, padx=8, sticky="ew")
 
     def _button(self, parent, text, command, color):
         return tk.Button(
