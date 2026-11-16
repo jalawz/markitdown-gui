@@ -8,6 +8,8 @@ nao ha display disponivel (CI headless).
 
 import importlib.util
 import sys
+import threading
+import time
 import types
 from pathlib import Path
 
@@ -128,44 +130,50 @@ class TestModule:
 # --------------------------------------------------------------------------- #
 class TestParseArgs:
     def test_sem_argumentos(self):
-        pos, auto, nogui, _ = mod.parse_args([])
+        pos, auto, nogui, _, _ = mod.parse_args([])
         assert pos == []
         assert auto is False
         assert nogui is False
 
     def test_um_arquivo(self):
-        pos, auto, nogui, _ = mod.parse_args(["a.pdf"])
+        pos, auto, nogui, _, _ = mod.parse_args(["a.pdf"])
         assert pos == ["a.pdf"]
         assert auto is False
 
     def test_origem_e_destino(self):
-        pos, _, _, _ = mod.parse_args(["a.pdf", "b.md"])
+        pos, _, _, _, _ = mod.parse_args(["a.pdf", "b.md"])
         assert pos == ["a.pdf", "b.md"]
 
     def test_flag_auto(self):
-        _, auto, _, _ = mod.parse_args(["a.pdf", "--auto"])
+        _, auto, _, _, _ = mod.parse_args(["a.pdf", "--auto"])
         assert auto is True
 
     def test_flag_no_gui(self):
-        _, _, nogui, _ = mod.parse_args(["a.pdf", "--no-gui"])
+        _, _, nogui, _, _ = mod.parse_args(["a.pdf", "--no-gui"])
         assert nogui is True
 
     def test_flags_combinadas(self):
-        pos, auto, nogui, _ = mod.parse_args(["a.pdf", "b.md", "--auto", "--no-gui"])
+        pos, auto, nogui, _, _ = mod.parse_args(["a.pdf", "b.md", "--auto", "--no-gui"])
         assert pos == ["a.pdf", "b.md"]
         assert auto is True
         assert nogui is True
 
     def test_flag_desconhecida_ignorada(self):
-        pos, _, _, _ = mod.parse_args(["a.pdf", "--inexistente"])
+        pos, _, _, _, _ = mod.parse_args(["a.pdf", "--inexistente"])
         assert pos == ["a.pdf"]
 
     def test_flag_no_outline(self):
-        pos, auto, nogui, no_outline = mod.parse_args(["a.pdf", "--no-gui", "--no-outline"])
+        pos, auto, nogui, no_outline, _ = mod.parse_args(["a.pdf", "--no-gui", "--no-outline"])
         assert pos == ["a.pdf"]
         assert auto is False
         assert nogui is True
         assert no_outline is True
+
+    def test_flag_split(self):
+        pos, auto, nogui, no_outline, split = mod.parse_args(["a.pdf", "--no-gui", "--split"])
+        assert pos == ["a.pdf"]
+        assert split is True
+        assert no_outline is False
 
 
 # --------------------------------------------------------------------------- #
@@ -245,6 +253,56 @@ class TestOutline:
         for posicao, original in enumerate(mapa):
             assert normalizado[posicao] == texto[original]
         assert normalizado[1] == "a"
+
+    def test_slug_limpa_e_seguro(self):
+        assert mod._slug("Introdução ao Spring Boot") == "introducao-ao-spring-boot"
+        assert mod._slug("Capítulo 12 — Docker Compose") == "capitulo-12-docker-compose"
+        assert mod._slug("!!!") == "secao"
+
+    def test_slug_sem_espacos_consecutivos(self):
+        assert mod._slug("Introducao   ao   Spring") == "introducao-ao-spring"
+
+
+class TestSplitChapters:
+    def _anchors(self):
+        return [
+            (1, "Introducao aos Microsservicos", "1 Introducao aos Microsservicos texto um"),
+            (1, "Introducao ao Spring Boot", "2 Introducao ao Spring Boot texto dois"),
+            (1, "Usando Docker", "3 Usando Docker texto tres"),
+        ]
+
+    def test_divide_nas_ancoras_e_nomeia_arquivos(self, monkeypatch, tmp_path):
+        md = (
+            "prefacio\n"
+            "1 Introducao aos Microsservicos texto um\n"
+            "2 Introducao ao Spring Boot texto dois\n"
+            "3 Usando Docker texto tres\n"
+        )
+        monkeypatch.setattr(mod, "pdf_outline_anchors", lambda p: self._anchors())
+        partes = mod.split_pdf_chapters(md, tmp_path / "x.pdf")
+        assert len(partes) == 3
+        assert partes[0][0].startswith("cap-01-")
+        assert "introducao-ao-spring-boot" in partes[1][0]
+        assert "texto tres" in partes[2][1]
+
+    def test_prefacio_fica_fora_dos_capitulos(self, monkeypatch, tmp_path):
+        md = "prefacio solto\n1 Introducao aos Microsservicos texto um\n2 Introducao ao Spring Boot texto dois\n"
+        monkeypatch.setattr(mod, "pdf_outline_anchors", lambda p: self._anchors()[:2])
+        partes = mod.split_pdf_chapters(md, tmp_path / "x.pdf")
+        assert len(partes) == 2
+        assert "prefacio" not in partes[0][1]
+
+    def test_sem_ancoras_retorna_vazio(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(mod, "pdf_outline_anchors", lambda p: [])
+        assert mod.split_pdf_chapters("texto", tmp_path / "x.pdf") == []
+
+    def test_ancora_inexistente_nao_gera_arquivo(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            mod,
+            "pdf_outline_anchors",
+            lambda p: [(1, "Fantasma", "nunca aparece neste texto")],
+        )
+        assert mod.split_pdf_chapters("texto corrido", tmp_path / "x.pdf") == []
 
 
 # --------------------------------------------------------------------------- #
@@ -391,6 +449,59 @@ class TestThreadSafety:
         app = mod.MarkItDownGUI(gui_root)
         app._closed = True
         app._ui_call(lambda: None)  # nao deve levantar
+
+    def test_fechar_janela_durante_a_conversao_nao_deixa_thread_ativa(
+        self, gui_root, tmp_path, fake_markitdown, sem_dialogos
+    ):
+        """Fechar a janela no meio da conversao nao pode prender thread orfa."""
+        antes = threading.enumerate()
+        app = mod.MarkItDownGUI(gui_root)
+        src = tmp_path / "doc.txt"
+        src.write_text("conteudo", encoding="utf-8")
+        app._queue.append((src, tmp_path / "doc.md"))
+        app._update_queue_display()
+
+        app.convert_queue()
+        assert app._busy is True
+
+        # Fecha como o usuario faria: confirma a janela de "sair mesmo assim".
+        mod.messagebox.askyesno = lambda *a, **k: True
+        app.on_closing()
+        assert app._closed is True
+
+        # O worker e daemon: precisa terminar sozinho antes de o teste sair.
+        prazo = time.time() + 20
+        enquanto_sobrar = True
+        while time.time() < prazo:
+            vivas = {t.ident for t in antes}
+            novas = [t for t in threading.enumerate() if t.ident not in vivas]
+            if not novas:
+                enquanto_sobrar = False
+                break
+            time.sleep(0.05)
+        assert not enquanto_sobrar, f"thread da conversao ficou presa: {novas}"
+
+    def test_worker_termina_quando_janela_fecha(self, gui_root, tmp_path, fake_markitdown):
+        """O proprio worker nao pode morrer com erro ao terminar sem a janela."""
+        app = mod.MarkItDownGUI(gui_root)
+        src = tmp_path / "doc.txt"
+        src.write_text("conteudo", encoding="utf-8")
+        dst = tmp_path / "doc.md"
+
+        opts = {"enable_plugins": False, "keep_data_uris": False, "use_outline": False}
+
+        done = threading.Event()
+        alvo = app._worker
+        app._worker = lambda *a, **k: (alvo(*a, **k), done.set())  # type: ignore[method-assign]
+
+        app._closed = True  # janela "fechada" antes de a conversao terminar
+        app._queue.append((src, dst))
+        app._queue_index = 0
+        app._total_files = 1
+
+        threading.Thread(target=app._worker, args=(src, dst, opts), daemon=True).start()
+        assert done.wait(20), "worker nao terminou apos a janela ser fechada"
+        assert dst.exists(), "arquivo deve ser salvo mesmo com a janela fechada"
 
     def test_worker_nao_toca_widget_diretamente(self):
         """

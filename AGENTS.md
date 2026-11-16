@@ -427,8 +427,15 @@ livro de 23 capitulos parece ter 8.
   heading na pagina correta (1..23); 53 `#` de codigo escapados.
 - **Limite conhecido:** a ancora usa o inicio da pagina; PDF com pagina de
   abertura sem texto (capa) nao recebe heading. Outline vazio -> saida normal.
-- **Nao feito:** um arquivo por capitulo, e headings de nivel 2 em diante
-  (o outline deste tipo de livro so tem nivel 1).
+- **Nao feito:** headings de nivel 2 em diante (o outline deste tipo de livro
+  so tem nivel 1).
+
+**Extensao (um arquivo por capitulo):** `split_pdf_chapters()` reusa as mesmas
+ancoras para cortar o Markdown em arquivos `cap-NN-<titulo-slug>.md` dentro de
+`<destino>-capitulos/`, com um `<destino>.md` de indice. Ligado pela UI
+("Salvar um arquivo por capitulo") ou `--split` no batch. Sem sumario, mantem o
+arquivo unico. Validado no livro de 1009 paginas: 28 arquivos, cap-04 -> pagina 1
+ate cap-26 -> pagina 23.
 
 ---
 

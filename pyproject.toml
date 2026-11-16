@@ -1,6 +1,6 @@
 [project]
 name = "markitdown-gui"
-version = "1.5.0"
+version = "1.6.0"
 description = "Interface grafica multiplataforma para converter documentos em Markdown usando o Microsoft MarkItDown"
 readme = "README.md"
 license = { text = "MIT" }

@@ -27,6 +27,7 @@ import sys
 import threading
 import tkinter as tk
 import traceback
+import unicodedata
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
@@ -39,7 +40,7 @@ except ImportError:
     HAS_DND = False
 
 APP_NAME = "MarkItDown GUI"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 CONFIG_DIR_NAME = "markitdown-gui"
 CONFIG_FILE_NAME = "config.json"
 
@@ -348,6 +349,68 @@ def apply_pdf_structure(markdown: str, path: Path) -> tuple[str, int]:
     return inject_outline_headings(markdown, pdf_outline_anchors(path))
 
 
+def _slug(texto: str, fallback: str = "secao") -> str:
+    """Nome de arquivo seguro a partir do titulo do capitulo."""
+    ascii_limpo = unicodedata.normalize("NFKD", texto)
+    ascii_limpo = ascii_limpo.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_limpo.lower()).strip("-")[:60]
+    return slug or fallback
+
+
+def split_pdf_chapters(markdown: str, path: Path) -> list[tuple[str, str]]:
+    """Divide o Markdown em capitulos a partir do outline do PDF.
+
+    Usa a mesma logica de busca de `inject_outline_headings`, mas em vez de
+    inserir headings, corta o texto nas ancoras. Cada item e
+    `(nome do arquivo, conteudo)`.
+
+    Devolve lista vazia se o PDF nao tem sumario ou se nenhuma ancora foi
+    encontrada -- o chamador mantem o arquivo unico.
+    """
+    anchors = pdf_outline_anchors(path)
+    if not anchors or not markdown:
+        return []
+
+    normalizado, mapa = _normalizar_com_mapa(markdown)
+    cortes: list[tuple[int, str]] = []
+    cursor = 0
+
+    for _nivel, titulo, ancora in anchors:
+        chave = _normalizar_espacos(ancora)
+        if not chave:
+            continue
+        palavras = chave.split()
+        achou = -1
+        for tamanho in (len(palavras), 8, 6, 4):
+            if not 0 < tamanho <= len(palavras):
+                continue
+            tentativa = " ".join(palavras[:tamanho])
+            posicao = normalizado.find(tentativa, cursor)
+            if posicao < 0:
+                posicao = normalizado.find(tentativa)
+            if posicao >= 0:
+                achou = posicao
+                break
+        if achou < 0:
+            continue
+        cortes.append((mapa[achou], titulo.strip()))
+        cursor = achou + 1
+
+    if not cortes:
+        return []
+
+    cortes.sort(key=lambda corte: corte[0])
+    partes: list[tuple[str, str]] = []
+    for indice, (posicao, titulo) in enumerate(cortes):
+        fim = cortes[indice + 1][0] if indice + 1 < len(cortes) else len(markdown)
+        trecho = markdown[posicao:fim].strip()
+        if not trecho:
+            continue
+        nome = f"cap-{indice + 1:02d}-{_slug(titulo)}.md"
+        partes.append((nome, trecho))
+    return partes
+
+
 def inject_outline_headings(markdown: str, anchors: list[tuple[int, str, str]]) -> tuple[str, int]:
     """Insere headings antes de cada ancora encontrada no Markdown.
 
@@ -439,6 +502,7 @@ class MarkItDownGUI:
         self.plugins_var = tk.BooleanVar(value=False)
         self.keep_uris_var = tk.BooleanVar(value=False)
         self.outline_var = tk.BooleanVar(value=True)
+        self.split_var = tk.BooleanVar(value=False)
 
         # Inicializa fila de conversao
         self._queue = []
@@ -704,6 +768,16 @@ class MarkItDownGUI:
             font=(self.family, 9),
             anchor="w",
         ).grid(row=2, column=0, sticky="w")
+
+        tk.Checkbutton(
+            opts,
+            text="Salvar um arquivo por capitulo (pasta do destino)",
+            variable=self.split_var,
+            bg="#f4f6f7",
+            activebackground="#f4f6f7",
+            font=(self.family, 9),
+            anchor="w",
+        ).grid(row=3, column=0, sticky="w")
 
         # --- Area central: progresso + log ---
         center = tk.Frame(container, bg="#f4f6f7", padx=22)
@@ -1058,6 +1132,7 @@ class MarkItDownGUI:
             "enable_plugins": bool(self.plugins_var.get()),
             "keep_data_uris": bool(self.keep_uris_var.get()),
             "use_outline": bool(self.outline_var.get()),
+            "split_chapters": bool(self.split_var.get()),
         }
 
         threading.Thread(target=self._worker, args=(src_path, dst_path, opts), daemon=True).start()
@@ -1182,6 +1257,26 @@ class MarkItDownGUI:
 
             self._set_status("Salvando o resultado...")
             dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if opts.get("split_chapters") and src_path.suffix.lower() == ".pdf":
+                partes = split_pdf_chapters(markdown, src_path)
+                if partes:
+                    pasta = dst_path.parent / f"{dst_path.stem}-capitulos"
+                    pasta.mkdir(parents=True, exist_ok=True)
+                    indice: list[str] = []
+                    for nome, conteudo in partes:
+                        (pasta / nome).write_text(conteudo + "\n", encoding="utf-8")
+                        indice.append(f"- [{nome}]({nome})")
+                    dst_path.write_text("# Indice\n\n" + "\n".join(indice) + "\n", encoding="utf-8")
+                    self._log(
+                        f"Dividido em {len(partes)} capitulo(s) em {pasta.name}/ + indice.", "ok"
+                    )
+                    chars = sum(len(conteudo) for _n, conteudo in partes)
+                    size_kb = sum((pasta / n).stat().st_size for n, _c in partes) / 1024
+                    self._ui_call(lambda: self._item_done(True, dst_path, chars, size_kb))
+                    return
+                self._log("Sumario nao casou; salvando arquivo unico.", "info")
+
             dst_path.write_text(markdown, encoding="utf-8")
 
             chars = len(markdown)
@@ -1213,6 +1308,7 @@ class MarkItDownGUI:
         self.plugins_var.set(False)
         self.keep_uris_var.set(False)
         self.outline_var.set(True)
+        self.split_var.set(False)
         self.status_var.set("Pronto para converter.")
         self._clear_log()
         self._enable_open_button(False)
@@ -1288,13 +1384,15 @@ def parse_args(argv):
     """Separa os argumentos posicionais das opcoes.
 
     Uso:
-        markitdown_gui.py [arquivo] [destino] [--auto] [--no-gui] [--no-outline]
+        markitdown_gui.py [arquivo] [destino] [--auto] [--no-gui]
+                          [--no-outline] [--split]
 
-    Retorna (posicionais, auto, no_gui, no_outline).
+    Retorna (posicionais, auto, no_gui, no_outline, split_chapters).
     """
     auto = False
     no_gui = False
     no_outline = False
+    split_chapters = False
     positional = []
     for arg in argv:
         if arg == "--auto":
@@ -1303,16 +1401,18 @@ def parse_args(argv):
             no_gui = True
         elif arg == "--no-outline":
             no_outline = True
+        elif arg == "--split":
+            split_chapters = True
         elif arg.startswith("-"):
             continue
         else:
             positional.append(arg)
-    return positional, auto, no_gui, no_outline
+    return positional, auto, no_gui, no_outline, split_chapters
 
 
 def main():
     enable_windows_dpi_awareness()
-    positional, auto, no_gui, no_outline = parse_args(sys.argv[1:])
+    positional, auto, no_gui, no_outline, split_chapters = parse_args(sys.argv[1:])
 
     # Modo linha de comando: converte e sai, sem abrir a janela.
     if no_gui:
@@ -1334,6 +1434,16 @@ def main():
                 markdown, marcadas = apply_pdf_structure(markdown, src)
                 if marcadas:
                     print(f"Sumario aplicado: {marcadas} secao(oes) marcada(s).")
+                if split_chapters:
+                    partes = split_pdf_chapters(markdown, src)
+                    if partes:
+                        pasta = dst.parent / f"{dst.stem}-capitulos"
+                        pasta.mkdir(parents=True, exist_ok=True)
+                        for nome, conteudo in partes:
+                            (pasta / nome).write_text(conteudo + "\n", encoding="utf-8")
+                        print(f"Dividido em {len(partes)} capitulo(s) em {pasta.name}/")
+                    else:
+                        print("Sumario nao casou; salvando arquivo unico.")
             dst.write_text(markdown, encoding="utf-8")
         except Exception as exc:
             print(f"Erro na conversao: {exc}")

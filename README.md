@@ -49,7 +49,7 @@ O [MarkItDown](https://github.com/microsoft/markitdown) é uma biblioteca excele
 
 ```
 +--------------------------------------------------------------+
-|  MarkItDown GUI v1.5.0                                       |
+|  MarkItDown GUI v1.6.0                                       |
 +--------------------------------------------------------------+
 |  MarkItDown Converter                                        |
 |  Converta documentos em Markdown pronto para LLMs            |
@@ -68,6 +68,7 @@ O [MarkItDown](https://github.com/microsoft/markitdown) é uma biblioteca excele
 |  | [ ] Usar plugins de terceiros (--use-plugins)          |  |
 |  | [ ] Manter data URIs (imagens base64) no resultado     |  |
 |  | [x] Estruturar PDF por capitulos (usa o sumario)       |  |
+|  | [ ] Salvar um arquivo por capitulo (pasta destino)     |  |
 |  +--------------------------------------------------------+  |
 |                                                              |
 |  + Progresso ---------------------------------------------+  |
@@ -177,6 +178,7 @@ eles entram na fila automaticamente.
 | Usar plugins de terceiros | `--use-plugins` | Habilita conversores instalados via `entry_points` |
 | Manter data URIs | `--keep-data-uris` | Preserva imagens base64 no Markdown em vez de truncar |
 | Estruturar PDF por capítulos | `--no-outline` (desliga) | Usa o sumário do PDF para emitir `# Capítulo` antes de cada capítulo e escapa os `#` do texto corrido |
+| Salvar um arquivo por capítulo | `--split` | Escreve cada capítulo em `<destino>-capitulos/cap-NN-titulo.md` e gera um índice com links |
 
 ### Estrutura de capítulos em PDF
 
@@ -195,6 +197,28 @@ Nada é adicionado nem removido do texto: só estrutura.
 
 PDF sem sumário (ou `pdfminer` ausente) → o arquivo sai como antes, e o registro
 avisa.
+
+### Um arquivo por capítulo
+
+Com o sumário aplicado, marque **"Salvar um arquivo por capítulo"** (ou use
+`--split` no batch) para não gerar um único `.md` gigante. A saída vira:
+
+```
+livro.md                          # índice com links
+livro-capitulos/
+├── cap-01-capa.md
+├── cap-04-introducao-aos-microsservicos.md
+├── cap-05-introducao-ao-spring-boot.md
+...
+└── cap-28-indice.md
+```
+
+Os nomes são transliterados (acentos viram ASCII) e truncados em 60 caracteres.
+É o formato mais prático para RAG, leitura parcial ou alimentar um LLM por
+capítulo.
+
+No livro de referência (1009 páginas): 28 arquivos, `cap-04` → página 1 do
+capítulo, até `cap-26` → capítulo 23.
 
 ---
 
@@ -250,6 +274,9 @@ python markitdown_gui.py livro.pdf saida.md --no-gui
 
 # Mesmo no batch, o sumário do PDF é aplicado; use --no-outline para desligar
 python markitdown_gui.py livro.pdf saida.md --no-gui --no-outline
+
+# Um arquivo por capítulo (cria saida-capitulos/ + indice em saida.md)
+python markitdown_gui.py livro.pdf saida.md --no-gui --split
 ```
 
 Exemplo em script:
