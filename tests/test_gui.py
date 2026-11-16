@@ -128,37 +128,123 @@ class TestModule:
 # --------------------------------------------------------------------------- #
 class TestParseArgs:
     def test_sem_argumentos(self):
-        pos, auto, nogui = mod.parse_args([])
+        pos, auto, nogui, _ = mod.parse_args([])
         assert pos == []
         assert auto is False
         assert nogui is False
 
     def test_um_arquivo(self):
-        pos, auto, nogui = mod.parse_args(["a.pdf"])
+        pos, auto, nogui, _ = mod.parse_args(["a.pdf"])
         assert pos == ["a.pdf"]
         assert auto is False
 
     def test_origem_e_destino(self):
-        pos, _, _ = mod.parse_args(["a.pdf", "b.md"])
+        pos, _, _, _ = mod.parse_args(["a.pdf", "b.md"])
         assert pos == ["a.pdf", "b.md"]
 
     def test_flag_auto(self):
-        _, auto, _ = mod.parse_args(["a.pdf", "--auto"])
+        _, auto, _, _ = mod.parse_args(["a.pdf", "--auto"])
         assert auto is True
 
     def test_flag_no_gui(self):
-        _, _, nogui = mod.parse_args(["a.pdf", "--no-gui"])
+        _, _, nogui, _ = mod.parse_args(["a.pdf", "--no-gui"])
         assert nogui is True
 
     def test_flags_combinadas(self):
-        pos, auto, nogui = mod.parse_args(["a.pdf", "b.md", "--auto", "--no-gui"])
+        pos, auto, nogui, _ = mod.parse_args(["a.pdf", "b.md", "--auto", "--no-gui"])
         assert pos == ["a.pdf", "b.md"]
         assert auto is True
         assert nogui is True
 
     def test_flag_desconhecida_ignorada(self):
-        pos, _, _ = mod.parse_args(["a.pdf", "--inexistente"])
+        pos, _, _, _ = mod.parse_args(["a.pdf", "--inexistente"])
         assert pos == ["a.pdf"]
+
+    def test_flag_no_outline(self):
+        pos, auto, nogui, no_outline = mod.parse_args(["a.pdf", "--no-gui", "--no-outline"])
+        assert pos == ["a.pdf"]
+        assert auto is False
+        assert nogui is True
+        assert no_outline is True
+
+
+# --------------------------------------------------------------------------- #
+# 2b. Sumario do PDF (headings por capitulo)
+# --------------------------------------------------------------------------- #
+class TestOutline:
+    def test_injeta_heading_antes_de_cada_capitulo(self):
+        md = (
+            "capa\n1 Introducao ao Spring Boot Neste capitulo veremos como construir "
+            "microsservicos cooperativos usando Spring Boot, com foco em valor\n"
+            "2 Acesso a Dados Neste capitulo aprenderemos como persistir dados em "
+            "bancos de dados MongoDB com Spring Data\n"
+        )
+        ancoras = [
+            (1, "Capitulo 1", "1 Introducao ao Spring Boot Neste capitulo veremos como"),
+            (1, "Capitulo 2", "2 Acesso a Dados Neste capitulo aprenderemos como persistir"),
+        ]
+        novo, n = mod.inject_outline_headings(md, ancoras)
+        assert n == 2
+        assert "# Capitulo 1\n\n1 Introducao ao Spring Boot" in novo
+        assert novo.index("# Capitulo 1") < novo.index("# Capitulo 2")
+
+    def test_sem_ancoras_nao_altera(self):
+        md = "texto corrido"
+        assert mod.inject_outline_headings(md, []) == (md, 0)
+
+    def test_ancora_inexistente_e_ignorada(self):
+        md = "texto sem a ancora procurada"
+        novo, n = mod.inject_outline_headings(md, [(1, "Fantasma", "nao existe no texto")])
+        assert (novo, n) == (md, 0)
+
+    def test_busca_e_sequencial_nao_casa_com_o_sumario(self):
+        """A ancora de 12 palavras do corpo nao deve casar com a linha do sumario."""
+        corpo = (
+            "Introducao aos Microsservicos Este livro nao elogia os microservicos "
+            "cegamente Em vez disso trata de como podemos usar seus beneficios"
+        )
+        md = f"Sumario Capitulo 1 36\n{corpo}\n"
+        ancoras = [(1, "Introducao aos Microsservicos", corpo[:110])]
+        novo, n = mod.inject_outline_headings(md, ancoras)
+        assert n == 1
+        assert novo.startswith("Sumario Capitulo 1 36\n#")
+        assert "# Introducao aos Microsservicos" in novo
+
+    def test_nivel_do_outline_vira_heading_correspondente(self):
+        md = "1 Topico Secao interna detalhes do assunto"
+        novo, n = mod.inject_outline_headings(
+            md,
+            [
+                (1, "Topico", "1 Topico Secao interna"),
+                (2, "Secao interna", "Secao interna detalhes"),
+            ],
+        )
+        assert n == 2
+        assert "# Topico" in novo
+        assert "## Secao interna" in novo
+
+    def test_titulo_generico_usa_titulo_da_pagina(self):
+        assert (
+            mod._titulo_do_sumario("Chapter 12", "Observabilidade Centralizada")
+            == "Observabilidade Centralizada"
+        )
+        assert mod._titulo_do_sumario("Preface", "x") == "Preface"
+
+    def test_escapar_hashes_do_texto_corrido(self):
+        texto = "# Verify that a 404\n## Product id 113\nnormal # no meio\n"
+        saida = mod.escape_leading_hashes(texto)
+        assert "\\# Verify that a 404" in saida
+        assert "\\## Product id 113" in saida
+        assert "normal # no meio" in saida
+
+    def test_normalizacao_preserva_indices(self):
+        texto = "  a \n\n b  "
+        normalizado, mapa = mod._normalizar_com_mapa(texto)
+        assert normalizado == " a b "
+        # Cada caractere normalizado aponta para o original correspondente.
+        for posicao, original in enumerate(mapa):
+            assert normalizado[posicao] == texto[original]
+        assert normalizado[1] == "a"
 
 
 # --------------------------------------------------------------------------- #

@@ -49,7 +49,7 @@ O [MarkItDown](https://github.com/microsoft/markitdown) é uma biblioteca excele
 
 ```
 +--------------------------------------------------------------+
-|  MarkItDown GUI v1.1.1                                       |
+|  MarkItDown GUI v1.2.0                                       |
 +--------------------------------------------------------------+
 |  MarkItDown Converter                                        |
 |  Converta documentos em Markdown pronto para LLMs            |
@@ -67,6 +67,7 @@ O [MarkItDown](https://github.com/microsoft/markitdown) é uma biblioteca excele
 |  + Opcoes ------------------------------------------------+  |
 |  | [ ] Usar plugins de terceiros (--use-plugins)          |  |
 |  | [ ] Manter data URIs (imagens base64) no resultado     |  |
+|  | [x] Estruturar PDF por capitulos (usa o sumario)       |  |
 |  +--------------------------------------------------------+  |
 |                                                              |
 |  + Progresso ---------------------------------------------+  |
@@ -175,6 +176,25 @@ eles entram na fila automaticamente.
 |---|---|---|
 | Usar plugins de terceiros | `--use-plugins` | Habilita conversores instalados via `entry_points` |
 | Manter data URIs | `--keep-data-uris` | Preserva imagens base64 no Markdown em vez de truncar |
+| Estruturar PDF por capítulos | `--no-outline` (desliga) | Usa o sumário do PDF para emitir `# Capítulo` antes de cada capítulo e escapa os `#` do texto corrido |
+
+### Estrutura de capítulos em PDF
+
+O MarkItDown entrega o texto do PDF como um fluxo contínuo — a troca de capítulo
+fica no meio de um parágrafo, sem heading algum. Isso quebra qualquer fatiamento
+por `#` (RAG, resumo por LLM, navegação).
+
+Com a opção ligada (padrão), a GUI lê o **outline do PDF** e insere
+`# <título do capítulo>` no ponto exato onde cada capítulo começa. O título vem
+do sumário; quando o sumário só diz `Chapter 12`, a GUI pega o título real da
+primeira página do capítulo.
+
+Como o texto de PDF é corrido, qualquer `#` que já exista nele é comentário de
+código/YAML/shell — esses são **escapados** (`\#`) para não virarem heading.
+Nada é adicionado nem removido do texto: só estrutura.
+
+PDF sem sumário (ou `pdfminer` ausente) → o arquivo sai como antes, e o registro
+avisa.
 
 ---
 
@@ -227,6 +247,9 @@ python markitdown_gui.py livro.pdf saida.md --auto
 
 # Modo batch: sem interface gráfica (ideal para scripts e cron)
 python markitdown_gui.py livro.pdf saida.md --no-gui
+
+# Mesmo no batch, o sumário do PDF é aplicado; use --no-outline para desligar
+python markitdown_gui.py livro.pdf saida.md --no-gui --no-outline
 ```
 
 Exemplo em script:

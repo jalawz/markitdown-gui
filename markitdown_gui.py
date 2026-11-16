@@ -20,6 +20,7 @@ Este software e distribuido sob a licenca MIT.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,7 +39,7 @@ except ImportError:
     HAS_DND = False
 
 APP_NAME = "MarkItDown GUI"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 CONFIG_DIR_NAME = "markitdown-gui"
 CONFIG_FILE_NAME = "config.json"
 
@@ -201,6 +202,206 @@ def default_destination(src: Path) -> Path:
     return dst
 
 
+# Sumário do PDF ------------------------------------------------------------ #
+TITULO_GENERICO = re.compile(r"^(chapter|cap[ií]tulo)\s*\d+$", re.IGNORECASE)
+MAX_SECOES_SUMARIO = 200
+
+
+def _normalizar_espacos(texto: str) -> str:
+    """Colapsa qualquer sequencia de espaco em um unico espaco."""
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _normalizar_com_mapa(texto: str) -> tuple[str, list[int]]:
+    """Normaliza espacos guardando, para cada caractere, o indice original."""
+    partes: list[str] = []
+    mapa: list[int] = []
+    em_espaco = False
+    for indice, char in enumerate(texto):
+        if char.isspace():
+            if not em_espaco:
+                partes.append(" ")
+                mapa.append(indice)
+                em_espaco = True
+            continue
+        em_espaco = False
+        partes.append(char)
+        mapa.append(indice)
+    return "".join(partes), mapa
+
+
+def _titulo_do_sumario(titulo_outline: str, titulo_pagina: str) -> str:
+    """Monta um titulo util: substitui 'Chapter 12' pelo titulo real da pagina."""
+    titulo_outline = titulo_outline.strip()
+    if TITULO_GENERICO.match(titulo_outline) and titulo_pagina:
+        return titulo_pagina
+    if titulo_pagina and titulo_pagina.lower() not in titulo_outline.lower():
+        if len(titulo_pagina) < len(titulo_outline):
+            return titulo_outline
+        return titulo_pagina
+    return titulo_outline or titulo_pagina
+
+
+def _pagina_do_destino(doc, dest, acao) -> int | None:
+    """Extrai o objid da pagina de um destino de outline (Dest ou acao GoTo)."""
+    from pdfminer.pdftypes import resolve1
+
+    alvo = resolve1(dest) if dest is not None else None
+    if alvo is None and acao is not None:
+        act = resolve1(acao)
+        if isinstance(act, dict):
+            alvo = act.get("D") or act.get("Dest")
+    if alvo is None:
+        return None
+    alvo = resolve1(alvo)
+    if isinstance(alvo, (bytes, str)):
+        try:
+            alvo = resolve1(doc.get_dest(alvo))
+        except Exception:
+            return None
+    if isinstance(alvo, list) and alvo:
+        alvo = alvo[0]
+    return getattr(alvo, "objid", None)
+
+
+def pdf_outline_anchors(path: Path) -> list[tuple[int, str, str]]:
+    """Le o sumario (outline) do PDF e devolve [(nivel, titulo, ancora)].
+
+    A ancora e o inicio do texto da pagina de destino, usado para localizar a
+    fronteira do capitulo dentro do Markdown gerado. Requer `pdfminer.six`
+    (instalado junto com `markitdown[all]`). Devolve lista vazia em qualquer
+    falha -- o chamador segue com o texto corrido.
+    """
+    try:
+        from pdfminer.high_level import extract_text
+        from pdfminer.pdfdocument import PDFDocument
+        from pdfminer.pdfpage import PDFPage
+        from pdfminer.pdfparser import PDFParser
+    except ImportError:
+        return []
+
+    resultado: list[tuple[int, str, str]] = []
+    try:
+        with open(path, "rb") as fh:
+            doc = PDFDocument(PDFParser(fh))
+            paginas = {page.pageid: indice for indice, page in enumerate(PDFPage.create_pages(doc))}
+            entradas = []
+            for nivel, titulo, dest, acao, _se in doc.get_outlines():
+                indice = paginas.get(_pagina_do_destino(doc, dest, acao))
+                if indice is not None:
+                    entradas.append((nivel, titulo, indice))
+
+            # Sumarios gigantes: fica so no nivel 1 para nao extrair centenas de paginas.
+            if len(entradas) > MAX_SECOES_SUMARIO:
+                entradas = [entrada for entrada in entradas if entrada[0] <= 1]
+            entradas = entradas[:MAX_SECOES_SUMARIO]
+
+            cache: dict[int, str] = {}
+            for nivel, titulo, indice in entradas:
+                if indice not in cache:
+                    cache[indice] = extract_text(str(path), page_numbers=[indice]) or ""
+                texto = cache[indice]
+                palavras = texto.split()
+                if not palavras:
+                    continue
+
+                # Titulo da pagina: linhas apos o numero, ate a primeira linha em branco.
+                linhas = texto.splitlines()
+                inicio = 0
+                while inicio < len(linhas) and not linhas[inicio].strip():
+                    inicio += 1
+                if inicio < len(linhas) and linhas[inicio].strip().isdigit():
+                    inicio += 1
+                titulo_linhas = []
+                for linha in linhas[inicio:]:
+                    limpa = linha.strip()
+                    if not limpa:
+                        break
+                    titulo_linhas.append(limpa)
+                titulo_pagina = " ".join(titulo_linhas[:3])[:160]
+                titulo_final = _titulo_do_sumario(titulo, titulo_pagina)
+                ancora = _normalizar_espacos(" ".join(palavras[:12]))
+                if ancora:
+                    resultado.append((nivel, titulo_final, ancora))
+    except Exception:
+        return []
+    return resultado
+
+
+def escape_leading_hashes(texto: str) -> str:
+    """Escapa '#' no inicio da linha.
+
+    Na saida de PDF o texto e corrido: qualquer '#' e conteudo (comentario de
+    codigo, YAML, shell), nunca estrutura. Sem escapar, esses '#' viram H1 e
+    poluem o documento.
+    """
+    return re.sub(r"(?m)^#", r"\\#", texto)
+
+
+def apply_pdf_structure(markdown: str, path: Path) -> tuple[str, int]:
+    """Aplica a estrutura de capitulos do PDF ao Markdown gerado.
+
+    Escapa os '#' do texto corrido e injeta os headings do sumario. Devolve o
+    novo Markdown e quantas secoes foram marcadas (0 se o PDF nao tem sumario).
+    """
+    markdown = escape_leading_hashes(markdown)
+    return inject_outline_headings(markdown, pdf_outline_anchors(path))
+
+
+def inject_outline_headings(markdown: str, anchors: list[tuple[int, str, str]]) -> tuple[str, int]:
+    """Insere headings antes de cada ancora encontrada no Markdown.
+
+    A busca e sequencial (a partir do ultimo acerto), para nao casar com o
+    sumario do proprio livro nem repetir o capitulo anterior. Devolve o novo
+    Markdown e quantas secoes foram marcadas.
+    """
+    if not anchors or not markdown:
+        return markdown, 0
+
+    normalizado, mapa = _normalizar_com_mapa(markdown)
+    insercoes: list[tuple[int, str]] = []
+    cursor = 0
+
+    for nivel, titulo, ancora in anchors:
+        chave = _normalizar_espacos(ancora)
+        if not chave:
+            continue
+        # Tenta a ancora completa e vai encurtando se o texto nao bater.
+        palavras = chave.split()
+        acerto = -1
+        for tamanho in (len(palavras), 8, 6, 4):
+            if tamanho <= 0 or tamanho > len(palavras):
+                continue
+            tentativa = " ".join(palavras[:tamanho])
+            posicao = normalizado.find(tentativa, cursor)
+            if posicao < 0:
+                posicao = normalizado.find(tentativa)
+            if posicao >= 0:
+                acerto = posicao
+                break
+        if acerto < 0:
+            continue
+
+        titulo_limpo = _normalizar_espacos(titulo)
+        if not titulo_limpo:
+            continue
+        marcador = "#" * min(max(nivel, 1), 3)
+        insercoes.append((mapa[acerto], f"{marcador} {titulo_limpo}\n\n"))
+        cursor = acerto + 1
+
+    if not insercoes:
+        return markdown, 0
+
+    saida: list[str] = []
+    anterior = 0
+    for posicao, texto in sorted(insercoes):
+        saida.append(markdown[anterior:posicao])
+        saida.append(texto)
+        anterior = posicao
+    saida.append(markdown[anterior:])
+    return "".join(saida), len(insercoes)
+
+
 def pip_install_hint():
     """Comando de instalacao adaptado ao SO e ao gerenciador de pacotes."""
     if sys.platform == "win32":
@@ -237,6 +438,7 @@ class MarkItDownGUI:
         self.dst_var = tk.StringVar()
         self.plugins_var = tk.BooleanVar(value=False)
         self.keep_uris_var = tk.BooleanVar(value=False)
+        self.outline_var = tk.BooleanVar(value=True)
 
         # Inicializa fila de conversao
         self._queue = []
@@ -492,6 +694,16 @@ class MarkItDownGUI:
             font=(self.family, 9),
             anchor="w",
         ).grid(row=1, column=0, sticky="w")
+
+        tk.Checkbutton(
+            opts,
+            text="Estruturar PDF por capitulos (usa o sumario do arquivo)",
+            variable=self.outline_var,
+            bg="#f4f6f7",
+            activebackground="#f4f6f7",
+            font=(self.family, 9),
+            anchor="w",
+        ).grid(row=2, column=0, sticky="w")
 
         # --- Area central: progresso + log ---
         center = tk.Frame(container, bg="#f4f6f7", padx=22)
@@ -845,6 +1057,7 @@ class MarkItDownGUI:
         opts = {
             "enable_plugins": bool(self.plugins_var.get()),
             "keep_data_uris": bool(self.keep_uris_var.get()),
+            "use_outline": bool(self.outline_var.get()),
         }
 
         threading.Thread(target=self._worker, args=(src_path, dst_path, opts), daemon=True).start()
@@ -959,13 +1172,21 @@ class MarkItDownGUI:
             md = MarkItDown(enable_plugins=opts["enable_plugins"])
             result = md.convert(str(src_path), keep_data_uris=opts["keep_data_uris"])
 
+            markdown = result.markdown
+            if opts.get("use_outline") and src_path.suffix.lower() == ".pdf":
+                markdown, marcadas = apply_pdf_structure(markdown, src_path)
+                if marcadas:
+                    self._log(f"Sumario do PDF aplicado: {marcadas} secao(oes) marcada(s).", "ok")
+                else:
+                    self._log("PDF sem sumario utilizavel; mantendo o texto corrido.", "info")
+
             self._set_status("Salvando o resultado...")
             dst_path.parent.mkdir(parents=True, exist_ok=True)
-            dst_path.write_text(result.markdown, encoding="utf-8")
+            dst_path.write_text(markdown, encoding="utf-8")
 
-            chars = len(result.markdown)
+            chars = len(markdown)
             size_kb = dst_path.stat().st_size / 1024
-            lines = result.markdown.count("\n") + 1
+            lines = markdown.count("\n") + 1
             self._log(f"OK: {chars:,} caracteres, {lines:,} linhas, {size_kb:,.1f} KB", "ok")
             self._set_status(f"Concluido: {dst_path.name} ({chars:,} caracteres)")
 
@@ -991,6 +1212,7 @@ class MarkItDownGUI:
         self.dst_var.set("")
         self.plugins_var.set(False)
         self.keep_uris_var.set(False)
+        self.outline_var.set(True)
         self.status_var.set("Pronto para converter.")
         self._clear_log()
         self._enable_open_button(False)
@@ -1066,26 +1288,31 @@ def parse_args(argv):
     """Separa os argumentos posicionais das opcoes.
 
     Uso:
-        markitdown_gui.py [arquivo] [destino] [--auto] [--no-gui]
+        markitdown_gui.py [arquivo] [destino] [--auto] [--no-gui] [--no-outline]
+
+    Retorna (posicionais, auto, no_gui, no_outline).
     """
     auto = False
     no_gui = False
+    no_outline = False
     positional = []
     for arg in argv:
         if arg == "--auto":
             auto = True
         elif arg == "--no-gui":
             no_gui = True
+        elif arg == "--no-outline":
+            no_outline = True
         elif arg.startswith("-"):
             continue
         else:
             positional.append(arg)
-    return positional, auto, no_gui
+    return positional, auto, no_gui, no_outline
 
 
 def main():
     enable_windows_dpi_awareness()
-    positional, auto, no_gui = parse_args(sys.argv[1:])
+    positional, auto, no_gui, no_outline = parse_args(sys.argv[1:])
 
     # Modo linha de comando: converte e sai, sem abrir a janela.
     if no_gui:
@@ -1102,11 +1329,16 @@ def main():
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
             result = MarkItDown().convert(str(src))
-            dst.write_text(result.markdown, encoding="utf-8")
+            markdown = result.markdown
+            if not no_outline and src.suffix.lower() == ".pdf":
+                markdown, marcadas = apply_pdf_structure(markdown, src)
+                if marcadas:
+                    print(f"Sumario aplicado: {marcadas} secao(oes) marcada(s).")
+            dst.write_text(markdown, encoding="utf-8")
         except Exception as exc:
             print(f"Erro na conversao: {exc}")
             return 1
-        print(f"OK: {len(result.markdown):,} caracteres -> {dst}")
+        print(f"OK: {len(markdown):,} caracteres -> {dst}")
 
         # Salva os diretorios usados para proxima vez
         try:

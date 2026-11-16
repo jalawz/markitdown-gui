@@ -12,6 +12,23 @@ Versionamento seguindo [SemVer](https://semver.org/lang/pt-BR/).
 Próximo release a ser preparado. Use este seção para registrar o que está
 em andamento antes de cortar uma versão.
 
+### Adicionado
+
+- **Estrutura de capítulos para PDF.** O MarkItDown entrega o texto de PDF como
+  fluxo contínuo, sem headings: a troca de capítulo fica no meio de um
+  parágrafo e os únicos `#` do arquivo são comentários de código. A GUI agora lê
+  o outline do PDF (via `pdfminer`) e insere `# <título>` no início de cada
+  capítulo; quando o outline só traz `Chapter 12`, usa o título real da primeira
+  página. Os `#` do texto corrido são escapados para não virar heading.
+  Validado em um livro de 1009 páginas / 23 capítulos: 28 seções marcadas, todas
+  na página certa, e 53 `#` de código escapados.
+- Toggle na UI ("Estruturar PDF por capítulos", ligado por padrão) e flag
+  `--no-outline` para o modo `--no-gui`.
+- Novas funções: `pdf_outline_anchors`, `inject_outline_headings`,
+  `escape_leading_hashes`, `apply_pdf_structure`, `_titulo_do_sumario`,
+  `_normalizar_com_mapa`. Nenhuma dependência nova (`pdfminer.six` já vem com
+  `markitdown[all]`).
+
 ### Corrigido
 
 - **Fila de conversão avançava só o primeiro arquivo.** `_queue_index` nunca
@@ -42,7 +59,6 @@ em andamento antes de cortar uma versão.
   `BooleanVar` inicializada duas vezes e `_total_files` agora é usado de fato.
 - **41 → 45 testes**; nova classe `TestQueue` cobre avanço da fila, erro parcial,
   cancelamento e a regressão do `Ctrl+Enter`.
-
 ---
 
 ## [1.1.0] — 2026-11-13

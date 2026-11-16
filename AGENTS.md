@@ -14,14 +14,14 @@ Este arquivo serve quatro propósitos:
 ## 0. Retomando o trabalho (leia primeiro)
 
 **Repositório:** https://github.com/jalawz/markitdown-gui
-**Branch principal:** `main` · **Última release:** `v1.1.0` · **Versão no código:** `APP_VERSION = "1.1.1"`
+**Branch principal:** `main` · **Última release:** `v1.1.1` · **Versão no código:** `APP_VERSION = "1.2.0"`
 
 ### Estado atual
 
 | Item | Status |
 |---|---|
 | Aplicação GUI (arquivo único, multiplataforma) | ✅ pronto |
-| Testes automatizados | ✅ 45 testes, CI verde |
+| Testes automatizados | ✅ 54 testes, CI verde |
 | CI (ruff + mypy + pytest) | ✅ 9/9 jobs, matriz 3 SOs × 4 Pythons |
 | Release com binários standalone | ✅ v1.1.0 publicada (Windows/Linux/macOS) |
 | Documentação | ✅ README, CONTRIBUTING, SECURITY, docs/PLATFORMS.md |
@@ -35,7 +35,7 @@ git clone https://github.com/jalawz/markitdown-gui.git
 cd markitdown-gui
 python -m venv .venv && .venv/Scripts/activate   # Windows
 pip install -r requirements-dev.txt
-pytest tests/ -q          # deve passar 45/45
+pytest tests/ -q          # deve passar 54/54
 ```
 
 Depois, escolha **um** item do backlog (seção 5) e:
@@ -123,7 +123,11 @@ essa restricao, pesquise as alternativas na secao 4.
 | `pip_install_hint()` | Comando de instalacao adaptado ao SO |
 | `open_in_file_manager()` | Abre o arquivo/pasta no gerenciador do SO |
 | `default_destination()` | Sugere destino `.md` sem sobrescrever a origem |
-| `parse_args()` | Separa posicionais de `--auto` / `--no-gui` |
+| `pdf_outline_anchors()` | Le o sumario do PDF: [(nivel, titulo, ancora)] |
+| `inject_outline_headings()` | Insere `#` antes da ancora de cada capitulo |
+| `escape_leading_hashes()` | Escapa `#` do texto corrido de PDF |
+| `apply_pdf_structure()` | Escapa + injeta headings (usado pela GUI e pelo batch) |
+| `parse_args()` | Separa posicionais de `--auto` / `--no-gui` / `--no-outline` |
 | `main()` | Ponto de entrada; modo batch ou GUI |
 
 ### 2.2. Classe `MarkItDownGUI`
@@ -348,9 +352,10 @@ converter: markitdown-gui 1.1.0
 
 #### 5.12 Testes automatizados  🚧 parcial
 
-**Ja feito:** 45 testes em `tests/test_gui.py`, rodando no CI em 3 SOs x 4
+**Ja feito:** 54 testes em `tests/test_gui.py`, rodando no CI em 3 SOs x 4
 versoes do Python. A classe `TestQueue` cobre avanco da fila, erro parcial,
-cancelamento e a regressao do `Ctrl+Enter`.
+cancelamento e a regressao do `Ctrl+Enter`; `TestOutline` cobre a injecao de
+headings do sumario e o escape dos `#` do texto corrido.
 
 **Falta:**
 
@@ -405,6 +410,24 @@ cancelamento e a regressao do `Ctrl+Enter`.
 
 - **Solucao:** ler `MARKITDOWN_DOCINTEL_ENDPOINT` e afins, exibir status
 - **Aceite:** a UI indica quando Azure Doc Intel esta configurado e pronto
+
+#### 5.18 Estrutura de capitulos em PDF  ✅
+
+O MarkItDown entrega PDF como fluxo continuo: sem headings, a troca de capitulo
+fica no meio de um paragrafo e todo `#` do arquivo e comentario de codigo. Um
+livro de 23 capitulos parece ter 8.
+
+- **Feito:** `pdf_outline_anchors()` le o outline (dest direto, acao GoTo e
+  destino nomeado) e extrai a ancora das primeiras 12 palavras da pagina;
+  `inject_outline_headings()` insere `# <titulo>` na posicao certa com busca
+  sequencial (nao casa com o sumario do proprio livro);
+  `escape_leading_hashes()` escapa os `#` do texto corrido.
+- **Aceite:** livro de 1009 paginas / 23 capitulos -> 28 secoes marcadas, cada
+  heading na pagina correta (1..23); 53 `#` de codigo escapados.
+- **Limite conhecido:** a ancora usa o inicio da pagina; PDF com pagina de
+  abertura sem texto (capa) nao recebe heading. Outline vazio -> saida normal.
+- **Nao feito:** um arquivo por capitulo, e headings de nivel 2 em diante
+  (o outline deste tipo de livro so tem nivel 1).
 
 ---
 
