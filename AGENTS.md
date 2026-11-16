@@ -14,7 +14,7 @@ Este arquivo serve quatro propósitos:
 ## 0. Retomando o trabalho (leia primeiro)
 
 **Repositório:** https://github.com/jalawz/markitdown-gui
-**Branch principal:** `main` · **Última release:** `v1.1.1` · **Versão no código:** `APP_VERSION = "1.2.0"`
+**Branch principal:** `main` · **Última release:** `v1.4.0` · **Versão no código:** `APP_VERSION = "1.5.0"`
 
 ### Estado atual
 
@@ -86,6 +86,7 @@ Estas quebraram o projeto de verdade. Nao repita:
 
 | Armadilha | Sintoma | Solucao |
 |---|---|---|
+| tag criada sem subir `APP_VERSION` | release com numero que nao bate com o codigo (`v1.4.0` x `1.1.0`) | ao taguear, confira `APP_VERSION` e `pyproject.toml` **no commit da tag** |
 | `root.update()` no macOS | trava o CI indefinidamente | usar `run_until()` (ver 5.12) |
 | `root.update_idletasks()` | **nao** executa `after(0, ...)` | usar `mainloop()` + polling |
 | `zip` no Git Bash (Windows) | `zip: command not found` | `python scripts/package.py` |

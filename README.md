@@ -49,7 +49,7 @@ O [MarkItDown](https://github.com/microsoft/markitdown) é uma biblioteca excele
 
 ```
 +--------------------------------------------------------------+
-|  MarkItDown GUI v1.2.0                                       |
+|  MarkItDown GUI v1.5.0                                       |
 +--------------------------------------------------------------+
 |  MarkItDown Converter                                        |
 |  Converta documentos em Markdown pronto para LLMs            |

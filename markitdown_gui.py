@@ -39,7 +39,7 @@ except ImportError:
     HAS_DND = False
 
 APP_NAME = "MarkItDown GUI"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.5.0"
 CONFIG_DIR_NAME = "markitdown-gui"
 CONFIG_FILE_NAME = "config.json"
 

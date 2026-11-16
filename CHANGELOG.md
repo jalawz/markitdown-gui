@@ -7,10 +7,12 @@ Versionamento seguindo [SemVer](https://semver.org/lang/pt-BR/).
 
 ---
 
-## [Não publicado]
+## [1.5.0] — 2026-11-16
 
-Próximo release a ser preparado. Use este seção para registrar o que está
-em andamento antes de cortar uma versão.
+Consolida o fix de fila (publicado sem querer como `v1.1.1`) e a estrutura de
+capítulos em PDF. As versões 1.2.0–1.4.0 foram tagueadas antes de o
+`APP_VERSION` acompanhar; elas aparecem abaixo reconstruídas a partir dos
+commits.
 
 ### Adicionado
 
@@ -57,8 +59,51 @@ em andamento antes de cortar uma versão.
   sem uso depois da agregação do resumo.
 - Limpezas: `columnconfigure` duplicado, comentário `# Acoes` duplicado,
   `BooleanVar` inicializada duas vezes e `_total_files` agora é usado de fato.
-- **41 → 45 testes**; nova classe `TestQueue` cobre avanço da fila, erro parcial,
-  cancelamento e a regressão do `Ctrl+Enter`.
+- **41 → 54 testes**; as classes `TestQueue` e `TestOutline` cobrem avanço da
+  fila, erro parcial, cancelamento, a regressão do `Ctrl+Enter` e a injeção de
+  headings do sumário.
+
+---
+
+## [1.4.0] — 2026-11-14
+
+*Registro reconstruído: tagueado sem entrada no changelog.*
+
+### Adicionado
+
+- **Arrastar e soltar** (5.1): `tkinterdnd2` opcional, com degradação
+  silenciosa quando ausente; arquivos soltos entram na fila.
+- `FILE_FILTERS` com os 24 formatos suportados.
+
+### Corrigido
+
+- Layout com um único container `pack()` no root, evitando o colapso de
+  `grid` em algumas builds do Tk.
+
+---
+
+## [1.3.0] — 2026-11-14
+
+*Registro reconstruído: tagueado sem entrada no changelog.*
+
+### Adicionado
+
+- **Conversão em lote (5.2)**, **cancelamento (5.3)** e **progresso
+  determinístico (5.4)** na fila de conversão.
+- `_queue`, `_cancel_requested` e barra de progresso por arquivo.
+
+---
+
+## [1.2.0] — 2026-11-13
+
+*Registro reconstruído: tagueado sem entrada no changelog.*
+
+### Adicionado
+
+- **Lembrar diretórios (5.7)**: `config.json` em `%APPDATA%` (Windows),
+  `~/Library/Application Support` (macOS) e `$XDG_CONFIG_HOME` (Linux);
+  origem e destino anteriores são restaurados ao abrir.
+
 ---
 
 ## [1.1.0] — 2026-11-13
