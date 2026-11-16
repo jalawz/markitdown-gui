@@ -38,7 +38,7 @@ except ImportError:
     HAS_DND = False
 
 APP_NAME = "MarkItDown GUI"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 CONFIG_DIR_NAME = "markitdown-gui"
 CONFIG_FILE_NAME = "config.json"
 
@@ -193,6 +193,14 @@ def open_in_file_manager(path):
         pass
 
 
+def default_destination(src: Path) -> Path:
+    """Sugere um destino .md que nunca sobrescreve o proprio arquivo de origem."""
+    dst = src.with_suffix(".md")
+    if dst == src:
+        dst = src.with_name(f"{src.stem}.converted.md")
+    return dst
+
+
 def pip_install_hint():
     """Comando de instalacao adaptado ao SO e ao gerenciador de pacotes."""
     if sys.platform == "win32":
@@ -217,8 +225,8 @@ class MarkItDownGUI:
         self._state_lock = threading.Lock()
 
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
-        self.root.geometry("700x620")
-        self.root.minsize(700, 560)
+        self.root.geometry("760x780")
+        self.root.minsize(720, 680)
         self.root.configure(bg="#f4f6f7")
 
         enable_windows_dpi_awareness()
@@ -234,6 +242,10 @@ class MarkItDownGUI:
         self._queue = []
         self._queue_index = 0
         self._total_files = 0
+        self._succeeded = 0
+        self._failed = 0
+        self._last_error = ""
+        self._last_stats = None
         self._cancel_requested = False
 
         self._build_ui()
@@ -258,9 +270,9 @@ class MarkItDownGUI:
             self.root.dnd_bind("<<Drop>>", self._on_drop)
 
             # Torna os campos de entrada tambem alvos de drop
-            if hasattr(self, "src_entry"):
-                self.src_entry.drop_target_register(DND_FILES)
-                self.src_entry.dnd_bind("<<Drop>>", self._on_drop)
+            for entry in (self.src_entry, self.dst_entry):
+                entry.drop_target_register(DND_FILES)
+                entry.dnd_bind("<<Drop>>", self._on_drop)
         except Exception:
             pass
 
@@ -309,7 +321,7 @@ class MarkItDownGUI:
         # Adiciona arquivos validos a fila
         for path in valid_files:
             src_path = path
-            dst_path = path.with_suffix(".md")
+            dst_path = default_destination(path)
             self._queue.append((src_path, dst_path))
 
         self._update_queue_display()
@@ -361,14 +373,55 @@ class MarkItDownGUI:
         body.pack(fill="both", expand=True)
         body.columnconfigure(1, weight=1)
 
+        # --- Origem e destino ---
+        tk.Label(
+            body,
+            text="Arquivo de origem:",
+            bg="#f4f6f7",
+            font=(self.family, 9, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        self.src_entry = tk.Entry(
+            body,
+            textvariable=self.src_var,
+            font=(self.family, 9),
+            relief="solid",
+            bd=1,
+        )
+        self.src_entry.grid(row=0, column=1, sticky="ew", padx=(10, 6), pady=(0, 6))
+
+        self.src_btn = self._button(body, "Procurar", self.browse_file, "#2980b9")
+        self.src_btn.grid(row=0, column=2, sticky="ew", pady=(0, 6))
+
+        tk.Label(
+            body,
+            text="Salvar em:",
+            bg="#f4f6f7",
+            font=(self.family, 9, "bold"),
+            anchor="w",
+        ).grid(row=1, column=0, sticky="w", pady=(0, 10))
+
+        self.dst_entry = tk.Entry(
+            body,
+            textvariable=self.dst_var,
+            font=(self.family, 9),
+            relief="solid",
+            bd=1,
+        )
+        self.dst_entry.grid(row=1, column=1, sticky="ew", padx=(10, 6), pady=(0, 10))
+
+        self.dst_btn = self._button(body, "Procurar", self.browse_dest, "#2980b9")
+        self.dst_btn.grid(row=1, column=2, sticky="ew", pady=(0, 10))
+
         # --- Fila de arquivos ---
         tk.Label(
             body, text="Fila de conversao:", bg="#f4f6f7", font=(self.family, 9, "bold"), anchor="w"
-        ).grid(row=0, column=0, sticky="nw", pady=(0, 6))
+        ).grid(row=2, column=0, sticky="nw", pady=(0, 6))
 
         # Frame da lista com scrollbar
         queue_frame = tk.Frame(body, bg="#f4f6f7")
-        queue_frame.grid(row=0, column=1, columnspan=2, sticky="nsew", padx=(10, 0), pady=(0, 10))
+        queue_frame.grid(row=2, column=1, columnspan=2, sticky="nsew", padx=(10, 0), pady=(0, 10))
         queue_frame.columnconfigure(0, weight=1)
         queue_frame.rowconfigure(0, weight=1)
 
@@ -391,16 +444,12 @@ class MarkItDownGUI:
 
         # Botoes da fila
         queue_btns = tk.Frame(body, bg="#f4f6f7")
-        queue_btns.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(4, 0))
+        queue_btns.grid(row=3, column=1, columnspan=2, sticky="ew", pady=(4, 0))
 
         self.add_to_queue_btn = self._button(
             queue_btns, "Adicionar a fila", self.add_to_queue, "#2980b9"
         )
         self.add_to_queue_btn.pack(side="left", padx=(0, 6))
-
-        # Aliases para compatibilidade com testes antigos
-        self.src_btn = self.add_to_queue_btn
-        self.dst_btn = self.add_to_queue_btn
 
         self.remove_from_queue_btn = self._button(
             queue_btns, "Remover selecionados", self.remove_from_queue, "#e67e22"
@@ -421,11 +470,8 @@ class MarkItDownGUI:
             bd=1,
             relief="groove",
         )
-        opts.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 14))
+        opts.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 14))
         opts.columnconfigure(0, weight=1)
-
-        self.plugins_var = tk.BooleanVar(value=False)
-        self.keep_uris_var = tk.BooleanVar(value=False)
 
         tk.Checkbutton(
             opts,
@@ -511,7 +557,7 @@ class MarkItDownGUI:
 
         self.log = tk.Text(
             log_box,
-            height=8,
+            height=6,
             wrap="word",
             font=("Consolas", 9),
             bg="#ffffff",
@@ -529,11 +575,8 @@ class MarkItDownGUI:
         # --- Botoes ---
         buttons = tk.Frame(container, bg="#f4f6f7", pady=16)
         buttons.pack(fill="x")
-        buttons.columnconfigure(0, weight=1)
-        buttons.columnconfigure(1, weight=1)
-        buttons.columnconfigure(2, weight=1)
-        buttons.columnconfigure(2, weight=1)
-        buttons.columnconfigure(2, weight=1)
+        for col in range(4):
+            buttons.columnconfigure(col, weight=1)
 
         self.convert_btn = tk.Button(
             buttons,
@@ -625,7 +668,7 @@ class MarkItDownGUI:
     def _bind_keys(self):
         self.root.bind("<Control-o>", lambda e: self.browse_file())
         self.root.bind("<Control-s>", lambda e: self.browse_dest())
-        self.root.bind("<Control-Return>", lambda e: self.convert_file())
+        self.root.bind("<Control-Return>", lambda e: self.convert_queue())
         self.root.bind("<Escape>", lambda e: self.reset_all())
 
     def _apply_cli_args(self, cli_args):
@@ -633,7 +676,7 @@ class MarkItDownGUI:
         if not cli_args:
             return
         src = Path(cli_args[0]).expanduser()
-        dst = Path(cli_args[1]).expanduser() if len(cli_args) > 1 else src.with_suffix(".md")
+        dst = Path(cli_args[1]).expanduser() if len(cli_args) > 1 else default_destination(src)
 
         self.src_var.set(str(src))
         self.dst_var.set(str(dst))
@@ -644,7 +687,6 @@ class MarkItDownGUI:
             self._update_queue_display()
 
     # --------------------------------------------------------------- Acoes
-    # --------------------------------------------------------------- Acoes
     def browse_file(self):
         path = filedialog.askopenfilename(
             title="Selecionar arquivo para converter", filetypes=FILE_FILTERS
@@ -653,7 +695,7 @@ class MarkItDownGUI:
             self.src_var.set(path)
             self._save_config(src_dir=str(Path(path).parent))
             if not self.dst_var.get().strip():
-                self.dst_var.set(str(Path(path).with_suffix(".md")))
+                self.dst_var.set(str(default_destination(Path(path))))
 
     def browse_dest(self):
         initial = self.dst_var.get().strip() or str(
@@ -700,7 +742,7 @@ class MarkItDownGUI:
         # Limpa campos para proximo
         self.src_var.set("")
         self.dst_var.set("")
-        self.src_btn.focus_set()
+        self.src_entry.focus_set()
 
     def remove_from_queue(self):
         """Remove itens selecionados da fila."""
@@ -741,18 +783,34 @@ class MarkItDownGUI:
                 )
                 return
 
+        # Nunca sobrescrever o proprio arquivo de origem.
+        for src, dst in self._queue:
+            try:
+                mesmo = Path(src).resolve() == Path(dst).resolve()
+            except OSError:
+                mesmo = False
+            if mesmo:
+                messagebox.showerror(
+                    "Erro",
+                    f"O destino nao pode ser o mesmo arquivo de origem:\n{src}",
+                )
+                return
+
         # Desabilita botoes durante a conversao
         self._set_busy(True)
         self.cancel_btn.config(state="normal")
-        self.convert_btn.config(state="disabled")
 
         self._cancel_requested = False
         self._queue_index = 0
+        self._succeeded = 0
+        self._failed = 0
+        self._last_error = ""
         self._total_files = len(self._queue)
 
-        # Configura progress bar
-        self.progress.configure(mode="determinate", maximum=len(self._queue), value=0)
+        # Uma unidade da barra por arquivo da fila.
+        self.progress.configure(mode="determinate", maximum=self._total_files, value=0)
         self.progress_pct_var.set("0%")
+        self._log(f"Iniciando fila com {self._total_files} arquivo(s).", "info")
 
         self._process_next_in_queue()
 
@@ -765,18 +823,19 @@ class MarkItDownGUI:
         self._set_status("Cancelando...")
 
     def _process_next_in_queue(self):
-        """Processa o proximo arquivo da fila."""
-        if self._cancel_requested or self._queue_index >= len(self._queue):
-            self._finish_queue()
+        """Processa o proximo arquivo da fila. Roda na thread principal."""
+        if self._cancel_requested or self._queue_index >= self._total_files:
+            self._finish_queue_internal()
             return
 
+        total = max(self._total_files, 1)
         src_path, dst_path = self._queue[self._queue_index]
 
         # Atualiza UI
-        self.progress.configure(value=self._queue_index)
-        self.progress_pct_var.set(f"{int((self._queue_index / len(self._queue)) * 100)}%")
-        self._set_status(f"Convertendo {self._queue_index + 1}/{len(self._queue)}: {src_path.name}")
-        self._log(f"Iniciando {self._queue_index + 1}/{len(self._queue)}: {src_path.name}", "info")
+        self.progress.configure(value=self._queue_index, maximum=total)
+        self.progress_pct_var.set(f"{int((self._queue_index / total) * 100)}%")
+        self._set_status(f"Convertendo {self._queue_index + 1}/{total}: {src_path.name}")
+        self._log(f"Iniciando {self._queue_index + 1}/{total}: {src_path.name}", "info")
 
         # Seleciona o item na listbox
         self.queue_listbox.selection_clear(0, tk.END)
@@ -790,32 +849,93 @@ class MarkItDownGUI:
 
         threading.Thread(target=self._worker, args=(src_path, dst_path, opts), daemon=True).start()
 
-    def _finish_queue(self):
-        """Finaliza o processamento da fila."""
-        self._ui_call(self._finish_queue_internal)
+    def _item_done(self, ok, dst_path, chars=0, size_kb=0.0, detail=""):
+        """Chamado na thread principal quando um arquivo da fila termina.
+
+        Contabiliza o resultado, avanca o indice e dispara o proximo item.
+        Um erro em um arquivo nao interrompe os demais.
+        """
+        self.progress.stop()
+
+        if ok:
+            self._succeeded += 1
+            self._last_output = dst_path
+            self._last_stats = (chars, size_kb)
+            self._enable_open_button(True)
+        else:
+            self._failed += 1
+            self._last_error = detail
+
+        self._queue_index += 1
+        total = max(self._total_files, 1)
+        self.progress.configure(value=self._queue_index, maximum=total)
+        self.progress_pct_var.set(f"{int((self._queue_index / total) * 100)}%")
+
+        if self._cancel_requested or self._queue_index >= self._total_files:
+            self._finish_queue_internal()
+            return
+
+        self._process_next_in_queue()
 
     def _finish_queue_internal(self):
-        """Finaliza o processamento da fila (chamado na thread principal)."""
+        """Finaliza o processamento da fila e mostra um resumo unico."""
+        total = self._total_files
+        attempted = self._queue_index
+        succeeded = self._succeeded
+        failed = self._failed
+
         self._set_busy(False)
         self.cancel_btn.config(state="disabled")
-        self.convert_btn.config(state="normal")
+        self.progress.stop()
 
         if self._cancel_requested:
             self.progress.configure(value=0)
             self.progress_pct_var.set("0%")
-            self._set_status("Fila cancelada.")
-            self._log("Fila cancelada pelo usuario.", "erro")
+            self._set_status(f"Fila cancelada ({attempted}/{total} tentado(s)).")
+            self._log(f"Fila cancelada: {attempted}/{total} arquivo(s) tentado(s).", "erro")
         else:
-            self.progress.configure(value=len(self._queue))
+            self.progress.configure(value=total)
             self.progress_pct_var.set("100%")
-            self._set_status(f"Fila concluida: {len(self._queue)} arquivo(s) processado(s).")
-            self._log(f"Fila finalizada: {len(self._queue)} arquivo(s) processado(s).", "ok")
+            self._set_status(f"Fila concluida: {succeeded} convertido(s), {failed} com erro.")
+            self._log(
+                f"Fila finalizada: {succeeded} convertido(s), {failed} com erro.",
+                "ok" if not failed else "erro",
+            )
+            self._show_summary(succeeded, failed, total)
 
         self._queue.clear()
+        self._queue_index = 0
+        self._total_files = 0
         self._update_queue_display()
-        self._enable_open_button(False)
+
+    def _show_summary(self, succeeded, failed, total):
+        """Mostra um unico dialogo ao final da fila (nunca um por arquivo)."""
+        if total == 1 and succeeded == 1:
+            dst = self._last_output
+            chars, size_kb = self._last_stats or (0, 0.0)
+            messagebox.showinfo(
+                "Conversao concluida",
+                f"Arquivo salvo em:\n{dst}\n\n{chars:,} caracteres  |  {size_kb:,.1f} KB",
+            )
+            return
+
+        if succeeded == 0:
+            messagebox.showerror(
+                "Fila concluida com erros",
+                f"Nenhum dos {total} arquivo(s) pode ser convertido.\n\n"
+                f"Ultimo erro:\n{self._last_error}",
+            )
+            return
+
+        linhas = [f"{succeeded} de {total} arquivo(s) convertido(s)."]
+        if failed:
+            linhas.append(f"{failed} falhou(aram). Veja o registro para detalhes.")
+        if self._last_output:
+            linhas.append(f"\nUltimo arquivo salvo em:\n{self._last_output.parent}")
+        messagebox.showinfo("Fila concluida", "\n".join(linhas))
 
     def _worker(self, src_path, dst_path, opts):
+        """Executa a conversao FORA da thread principal."""
         try:
             self._set_status("Carregando conversores...")
             self._log("Importando markitdown...", "info")
@@ -825,10 +945,10 @@ class MarkItDownGUI:
                 hint = pip_install_hint()
                 self._log(f"markitdown nao encontrado. Instale com: {hint}", "erro")
                 self._ui_call(
-                    lambda: messagebox.showerror(
-                        "Dependencia ausente",
-                        f"O pacote 'markitdown' nao esta instalado.\n\n"
-                        f"Execute no terminal:\n    {hint}",
+                    lambda: self._item_done(
+                        False,
+                        dst_path,
+                        detail=f"pacote markitdown nao instalado. Use: {hint}",
                     )
                 )
                 return
@@ -848,37 +968,17 @@ class MarkItDownGUI:
             lines = result.markdown.count("\n") + 1
             self._log(f"OK: {chars:,} caracteres, {lines:,} linhas, {size_kb:,.1f} KB", "ok")
             self._set_status(f"Concluido: {dst_path.name} ({chars:,} caracteres)")
-            self._ui_call(self._progress_complete)
-
-            self._last_output = dst_path
-            self._ui_call(lambda: self._enable_open_button(True))
-            self._ui_call(lambda: self._on_success(dst_path, chars, size_kb))
 
             # Salva os diretorios usados para proxima vez
             self._save_config(src_dir=str(src_path.parent), dst_dir=str(dst_path.parent))
 
+            self._ui_call(lambda: self._item_done(True, dst_path, chars, size_kb))
+
         except Exception as exc:
             detail = "".join(traceback.format_exception_only(type(exc), exc)).strip()
-            self._log(f"ERRO: {detail}", "erro")
+            self._log(f"ERRO em {src_path.name}: {detail}", "erro")
             self._set_status(f"Erro: {detail}")
-            self._ui_call(self._progress_reset)
-            self._ui_call(
-                lambda d=detail: messagebox.showerror(
-                    "Erro na conversao",
-                    f"Nao foi possivel converter o arquivo.\n\n{d}\n\n"
-                    "Se for PDF, instale as dependencias:\n"
-                    "    pip install 'markitdown[all]'",
-                )
-            )
-        finally:
-            self._ui_call(self.progress.stop)
-            self._set_busy(False)
-
-    def _on_success(self, dst_path, chars, size_kb):
-        messagebox.showinfo(
-            "Conversao concluida",
-            f"Arquivo salvo em:\n{dst_path}\n\n{chars:,} caracteres  |  {size_kb:,.1f} KB",
-        )
+            self._ui_call(lambda d=detail: self._item_done(False, dst_path, detail=d))
 
     def open_output(self):
         if self._last_output:
@@ -929,21 +1029,21 @@ class MarkItDownGUI:
     def _set_busy(self, busy):
         self._busy = busy
         state = "disabled" if busy else "normal"
-        for btn in (self.convert_btn, self.reset_btn, self.src_btn, self.dst_btn):
-            self._ui_call(lambda b=btn, s=state: b.config(state=s))
+        for widget in (
+            self.convert_btn,
+            self.reset_btn,
+            self.src_btn,
+            self.dst_btn,
+            self.add_to_queue_btn,
+            self.remove_from_queue_btn,
+            self.clear_queue_btn,
+            self.src_entry,
+            self.dst_entry,
+        ):
+            self._ui_call(lambda w=widget, s=state: w.config(state=s))
 
     def _enable_open_button(self, enabled):
         self.open_btn.config(state="normal" if enabled else "disabled")
-
-    def _progress_complete(self):
-        """Barra deterministica em 100% apos a conversao."""
-        self.progress.stop()
-        self.progress.configure(mode="determinate", value=100)
-
-    def _progress_reset(self):
-        """Zera a barra após um erro."""
-        self.progress.stop()
-        self.progress.configure(mode="determinate", value=0)
 
     def _log(self, message, level="info"):
         colors = {"info": "#2c3e50", "ok": "#1e8449", "erro": "#c0392b"}
@@ -993,7 +1093,7 @@ def main():
             print("Erro: informe o arquivo a converter.")
             return 2
         src = Path(positional[0])
-        dst = Path(positional[1]) if len(positional) > 1 else src.with_suffix(".md")
+        dst = Path(positional[1]) if len(positional) > 1 else default_destination(src)
         try:
             from markitdown import MarkItDown
         except ImportError:

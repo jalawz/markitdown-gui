@@ -8,6 +8,7 @@ nao ha display disponivel (CI headless).
 
 import importlib.util
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -208,6 +209,8 @@ class TestGUICreation:
             "status_var",
             "progress",
             "log",
+            "src_entry",
+            "dst_entry",
             "convert_btn",
             "reset_btn",
             "open_btn",
@@ -215,6 +218,14 @@ class TestGUICreation:
             "dst_btn",
         ):
             assert hasattr(app, attr), f"faltando {attr}"
+
+    def test_campos_de_entrada_visiveis(self, gui_root):
+        """Origem e destino precisam ser editaveis na janela (nao so variaveis)."""
+        app = mod.MarkItDownGUI(gui_root)
+        assert app.src_entry.winfo_manager() in ("pack", "grid", "place")
+        assert app.dst_entry.winfo_manager() in ("pack", "grid", "place")
+        app.src_var.set("C:/exemplo.pdf")
+        assert app.src_entry.get() == "C:/exemplo.pdf"
 
     def test_botao_limpar_visivel(self, gui_root):
         """O bug original: reset_btn era criado mas nunca exibido."""
@@ -329,21 +340,21 @@ class TestThreadSafety:
             "_apply_cli_args",
             "browse_file",
             "browse_dest",
-            "convert_file",
             "convert_queue",
             "add_to_queue",
             "remove_from_queue",
             "clear_queue",
             "cancel_queue",
+            "_process_next_in_queue",
+            "_item_done",
             "_finish_queue_internal",
+            "_show_summary",
             "reset_all",
             "on_closing",
             "_ui_call",
             "_set_status",
             "_set_busy",
             "_enable_open_button",
-            "_progress_complete",
-            "_progress_reset",
             "_write_log",
             "_clear_log",
             "_load_config",
@@ -423,6 +434,105 @@ class TestConversion:
 
         assert dst.exists()
         assert dst.parent.is_dir()
+
+
+# --------------------------------------------------------------------------- #
+# 7b. Fila de conversao
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def fake_markitdown(monkeypatch):
+    """Substitui `markitdown` por um conversor trivial (sem dependencia real)."""
+    module = types.ModuleType("markitdown")
+
+    class _Result:
+        def __init__(self, markdown):
+            self.markdown = markdown
+
+    class _FakeMarkItDown:
+        def __init__(self, enable_plugins=False):
+            self.enable_plugins = enable_plugins
+
+        def convert(self, source, **kwargs):
+            return _Result(f"# {Path(source).name}\n\nconvertido\n")
+
+    module.MarkItDown = _FakeMarkItDown
+    monkeypatch.setitem(sys.modules, "markitdown", module)
+    return module
+
+
+@pytest.fixture
+def sem_dialogos(monkeypatch):
+    """Impede que messagebox bloqueie o event loop durante os testes."""
+    monkeypatch.setattr(mod.messagebox, "showinfo", lambda *a, **k: None)
+    monkeypatch.setattr(mod.messagebox, "showerror", lambda *a, **k: None)
+
+
+class TestQueue:
+    def test_fila_converte_todos_os_arquivos(
+        self, gui_root, tmp_path, fake_markitdown, sem_dialogos
+    ):
+        app = mod.MarkItDownGUI(gui_root)
+        saidas = []
+        for i in range(3):
+            src = tmp_path / f"doc{i}.txt"
+            src.write_text(f"conteudo {i}", encoding="utf-8")
+            dst = tmp_path / f"doc{i}.md"
+            saidas.append(dst)
+            app._queue.append((src, dst))
+        app._update_queue_display()
+
+        app.convert_queue()
+        assert run_until(gui_root, lambda: not app._busy), "fila nao terminou"
+
+        assert all(d.exists() for d in saidas), "algum arquivo da fila nao foi convertido"
+        assert app._succeeded == 3
+        assert app._failed == 0
+        assert app._queue == []
+        assert app.progress_pct_var.get() == "100%"
+        assert "3 convertido" in app.status_var.get()
+
+    def test_erro_nao_interrompe_os_demais(self, gui_root, tmp_path, fake_markitdown, sem_dialogos):
+        app = mod.MarkItDownGUI(gui_root)
+        bom_src = tmp_path / "bom.txt"
+        bom_src.write_text("ok", encoding="utf-8")
+        bom_dst = tmp_path / "bom.md"
+
+        # Primeiro item aponta para um arquivo inexistente.
+        app._queue.append((tmp_path / "nao-existe.txt", tmp_path / "falha.md"))
+        app._queue.append((bom_src, bom_dst))
+        app._update_queue_display()
+
+        app.convert_queue()
+        assert run_until(gui_root, lambda: not app._busy), "fila nao terminou"
+
+        assert app._failed == 1
+        assert app._succeeded == 1
+        assert bom_dst.exists(), "erro em um item impediu o proximo de rodar"
+
+    def test_cancelamento_para_a_fila(self, gui_root, tmp_path, fake_markitdown, sem_dialogos):
+        app = mod.MarkItDownGUI(gui_root)
+        for i in range(3):
+            src = tmp_path / f"doc{i}.txt"
+            src.write_text("x", encoding="utf-8")
+            app._queue.append((src, tmp_path / f"doc{i}.md"))
+        app._update_queue_display()
+
+        app.convert_queue()
+        app.cancel_queue()
+        assert run_until(gui_root, lambda: not app._busy), "fila nao terminou"
+
+        assert app._cancel_requested is True
+        assert app._queue == []
+        assert "cancelada" in app.status_var.get().lower()
+        # Nao pode ter convertido os tres arquivos depois do cancelamento.
+        convertidos = list(tmp_path.glob("*.md"))
+        assert len(convertidos) < 3
+
+    def test_ctrl_enter_aponta_para_metodo_existente(self):
+        """Regressao: o binding usava convert_file(), que foi removido."""
+        src = SRC.read_text(encoding="utf-8")
+        assert "convert_file" not in src
+        assert 'self.root.bind("<Control-Return>", lambda e: self.convert_queue())' in src
 
 
 # --------------------------------------------------------------------------- #
