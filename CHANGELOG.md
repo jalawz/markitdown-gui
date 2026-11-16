@@ -26,6 +26,25 @@ commits.
   na página certa, e 53 `#` de código escapados.
 - Toggle na UI ("Estruturar PDF por capítulos", ligado por padrão) e flag
   `--no-outline` para o modo `--no-gui`.
+
+### Adicionado (continuação)
+
+- **Salvar um arquivo por capítulo.** Com o sumário do PDF aplicado, a GUI
+  pode escrever cada capítulo em seu próprio arquivo dentro de uma pasta
+  `<destino>-capitulos/`, com nomes normalizados (`cap-08-adicionando-uma-
+  descricao-de-api-usando-openapi.md`) e um `<destino>.md` servindo de índice
+  com links relativos. Toggle na UI ("Salvar um arquivo por capítulo") e flag
+  `--split` no modo `--no-gui`.
+- `split_pdf_chapters()` e `_slug()` (com `unicodedata` para transliterar
+  acentos em nomes de arquivo).
+
+### Corrigido (continuação)
+
+- **Testes de fechar a janela durante a conversão** (pendência do item 5.12):
+  `test_fechar_janela_durante_a_conversao_nao_deixa_thread_ativa` e
+  `test_worker_termina_quando_janela_fecha` cobrem o caminho em que a janela
+  morre antes do worker terminar. Nenhuma thread órfã, e o arquivo continua
+  sendo salvo.
 - Novas funções: `pdf_outline_anchors`, `inject_outline_headings`,
   `escape_leading_hashes`, `apply_pdf_structure`, `_titulo_do_sumario`,
   `_normalizar_com_mapa`. Nenhuma dependência nova (`pdfminer.six` já vem com
@@ -59,9 +78,9 @@ commits.
   sem uso depois da agregação do resumo.
 - Limpezas: `columnconfigure` duplicado, comentário `# Acoes` duplicado,
   `BooleanVar` inicializada duas vezes e `_total_files` agora é usado de fato.
-- **41 → 54 testes**; as classes `TestQueue` e `TestOutline` cobrem avanço da
-  fila, erro parcial, cancelamento, a regressão do `Ctrl+Enter` e a injeção de
-  headings do sumário.
+- **41 → 63 testes**; as classes `TestQueue`, `TestOutline` e `TestSplitChapters`
+  cobrem avanço da fila, erro parcial, cancelamento, a regressão do `Ctrl+Enter`,
+  a injeção de headings do sumário e o corte por capítulo.
 
 ---
 
