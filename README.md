@@ -36,7 +36,8 @@ O [MarkItDown](https://github.com/microsoft/markitdown) é uma biblioteca excele
 - **Zero configuração** — abra, escolha o arquivo, converta.
 - **Multiplataforma** — o mesmo código roda em Windows, macOS e Linux.
 - **Sem dependências pesadas** — apenas `tkinter` (já vem com o Python) e o MarkItDown.
-- **Conversão em lote** — modo `--no-gui` para scripts e automação.
+- **Conversão em lote** — monte uma fila na janela, acompanhe o progresso
+  e cancele entre arquivos; modo `--no-gui` para scripts e automação.
 - **Transparente** — código aberto, sem telemetria, sem serviços externos.
 
 > [!NOTE]
@@ -48,31 +49,37 @@ O [MarkItDown](https://github.com/microsoft/markitdown) é uma biblioteca excele
 
 ```
 +--------------------------------------------------------------+
-|  MarkItDown GUI v1.1.0                                       |
+|  MarkItDown GUI v1.1.1                                       |
 +--------------------------------------------------------------+
 |  MarkItDown Converter                                        |
-|  Converta documentos em Markdown pronto para LLMs             |
+|  Converta documentos em Markdown pronto para LLMs            |
 +--------------------------------------------------------------+
 |  Arquivo de origem: [C:\Users\...\Go Programming.pdf][Procurar]|
 |  Salvar em:         [C:\Users\...\go-programming.md][Procurar]|
 |                                                              |
-|  + Options ------------------------------------------------+  |
+|  Fila de conversao:                                          |
+|  +--------------------------------------------------------+  |
+|  | livro.pdf -> livro.md                                  |  |
+|  | artigo.docx -> artigo.md                               |  |
+|  +--------------------------------------------------------+  |
+|  [Adicionar a fila] [Remover selecionados] [Limpar fila]      |
+|                                                              |
+|  + Opcoes ------------------------------------------------+  |
 |  | [ ] Usar plugins de terceiros (--use-plugins)          |  |
 |  | [ ] Manter data URIs (imagens base64) no resultado     |  |
 |  +--------------------------------------------------------+  |
 |                                                              |
-|  + Progress ------------------------------------------------+  |
-|  | [############################################        ] |  |
-|  | Concluído: go-programming.md (1.062.373 caracteres)   |  |
+|  + Progresso ---------------------------------------------+  |
+|  | [#################################        ]      66%   |  |
+|  | Convertendo 2/3: artigo.docx                           |  |
 |  +--------------------------------------------------------+  |
 |                                                              |
-|  + Registro ------------------------------------------------+  |
-|  | Importando markitdown...                              |  |
-|  | Convertendo ... (12.010.307 bytes)                    |  |
+|  + Registro ----------------------------------------------+  |
+|  | Fila iniciada com 3 arquivo(s).                        |  |
 |  | OK: 1.062.373 caracteres, 20.992 linhas, 1.063,9 KB    |  |
 |  +--------------------------------------------------------+  |
 |                                                              |
-|  [ Converter ]  [ Limpar ]  [ Abrir pasta do resultado ]     |
+|  [Converter fila] [Cancelar] [Limpar] [Abrir pasta]          |
 +--------------------------------------------------------------+
 ```
 
@@ -146,12 +153,21 @@ python3 markitdown_gui.py
 ### Passo a passo
 
 1. **Abra** a aplicação (`python markitdown_gui.py`)
-2. **Clique em "Procurar..."** em *Arquivo de origem* e escolha o documento
+2. **Clique em "Procurar"** em *Arquivo de origem* e escolha o documento
    — o destino `.md` é sugerido automaticamente
 3. **Ajuste o destino** se necessário
-4. **Clique em "Converter"**
-5. Acompanhe o progresso e o registro em tempo real
-6. Use **"Abrir pasta do resultado"** para ver o arquivo
+4. **Clique em "Adicionar a fila"** — repita os passos 2–4 para converter
+   vários documentos de uma vez
+5. **Clique em "Converter fila"** (ou `Ctrl+Enter`)
+6. Acompanhe o progresso e o registro em tempo real; **"Cancelar"**
+   interrompe a fila entre um arquivo e outro
+7. Use **"Abrir pasta do resultado"** para ver o último arquivo gerado
+
+Dica: arraste arquivos para a janela (requer `pip install tkinterdnd2`) —
+eles entram na fila automaticamente.
+
+> O destino nunca pode ser o próprio arquivo de origem. Se você abrir um
+> `.md` sem informar destino, a GUI sugere `<nome>.converted.md`.
 
 ### Opções
 
@@ -230,7 +246,7 @@ done
 |---|---|
 | `Ctrl+O` | Selecionar arquivo de origem |
 | `Ctrl+S` | Selecionar destino |
-| `Ctrl+Enter` | Converter |
+| `Ctrl+Enter` | Converter a fila |
 | `Esc` | Limpar campos |
 
 ---

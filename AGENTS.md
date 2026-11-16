@@ -14,18 +14,19 @@ Este arquivo serve quatro propósitos:
 ## 0. Retomando o trabalho (leia primeiro)
 
 **Repositório:** https://github.com/jalawz/markitdown-gui
-**Branch principal:** `main` · **Última release:** `v1.1.0` · **Versão no código:** `APP_VERSION = "1.1.0"`
+**Branch principal:** `main` · **Última release:** `v1.1.0` · **Versão no código:** `APP_VERSION = "1.1.1"`
 
 ### Estado atual
 
 | Item | Status |
 |---|---|
 | Aplicação GUI (arquivo único, multiplataforma) | ✅ pronto |
-| Testes automatizados | ✅ 40 testes, CI verde |
+| Testes automatizados | ✅ 45 testes, CI verde |
 | CI (ruff + mypy + pytest) | ✅ 9/9 jobs, matriz 3 SOs × 4 Pythons |
 | Release com binários standalone | ✅ v1.1.0 publicada (Windows/Linux/macOS) |
 | Documentação | ✅ README, CONTRIBUTING, SECURITY, docs/PLATFORMS.md |
-| **Backlog P0/P1/P2** | ⬜ **não iniciado — comece por 5.1** |
+| **Backlog P0** | ✅ 5.1, 5.2, 5.3 feitos · 5.4, 5.5 pendentes |
+| **Backlog P1** | 🚧 5.7 feito · demais pendentes |
 
 ### Checklist para retomar
 
@@ -34,7 +35,7 @@ git clone https://github.com/jalawz/markitdown-gui.git
 cd markitdown-gui
 python -m venv .venv && .venv/Scripts/activate   # Windows
 pip install -r requirements-dev.txt
-pytest tests/ -q          # deve passar 40/40
+pytest tests/ -q          # deve passar 45/45
 ```
 
 Depois, escolha **um** item do backlog (seção 5) e:
@@ -121,6 +122,7 @@ essa restricao, pesquise as alternativas na secao 4.
 | `enable_windows_dark_titlebar()` | Barra de titulo escura no Windows 10/11 |
 | `pip_install_hint()` | Comando de instalacao adaptado ao SO |
 | `open_in_file_manager()` | Abre o arquivo/pasta no gerenciador do SO |
+| `default_destination()` | Sugere destino `.md` sem sobrescrever a origem |
 | `parse_args()` | Separa posicionais de `--auto` / `--no-gui` |
 | `main()` | Ponto de entrada; modo batch ou GUI |
 
@@ -134,17 +136,26 @@ _apply_cli_args     -> pre-preenche origem/destino
 
 browse_file         -> seletor de arquivo (24 formatos)
 browse_dest         -> seletor de destino (.md)
-convert_file        -> valida, prepara e despacha a thread de conversao
+add_to_queue        -> valida origem/destino e enfileira
+convert_queue       -> valida a fila e despacha o primeiro item
 
+_process_next_in_queue -> inicia a thread do item corrente (thread principal)
 _worker             -> executa a conversao FORA da thread principal
   _set_status       -> status label
   _log              -> painel de registro (info/ok/erro)
   _ui_call          -> despachante thread-safe para a thread principal
+_item_done          -> conta o resultado, avanca o indice, dispara o proximo
+_finish_queue_internal -> resumo unico, libera botoes, limpa a fila
+_show_summary       -> um dialogo no fim (nunca um por arquivo)
 
 reset_all           -> limpa os campos
 open_output         -> abre a pasta do resultado
 on_closing          -> confirmacao se houver conversao em andamento
 ```
+
+O avanco da fila **so** acontece em `_item_done`, que roda na thread
+principal. `_worker` nunca chama `_process_next_in_queue` direto — ele apenas
+sinaliza o fim do item com `_ui_call`. Isso mantem a regra da secao 2.3.
 
 ### 2.3. O padrao `_ui_call`
 
@@ -242,36 +253,37 @@ Legenda: ✅ feito · ⬜ pendente · 🚧 em andamento
 
 ### P0 — Funcionalidade essencial
 
-#### 5.1 Arrastar e soltar arquivos  ⬜
+#### 5.1 Arrastar e soltar arquivos  ✅
 
 O usuario espera arrastar o PDF para a janela.
 
-- **Solucao:** `tkinterdnd2` (opcional, degrade graciosamente se ausente)
+- **Feito:** `tkinterdnd2` opcional (`HAS_DND`); drop na janela e nos dois
+  campos de entrada. Arquivos soltos entram na fila.
 - **Aceite:** arrastar 1 arquivo preenche origem + sugere destino; multiplos
-  arquivos disparam conversao em lote
+  arquivos vao para a fila (nao iniciam sozinhos — o usuario confirma)
 - **Risco:** `tkinterdnd2` traz um Tcl patch que pode conflitar com o Tk do
   sistema. Testar em 3 SOs antes de merge.
 
-#### 5.2 Conversao em lote / fila  ⬜
+#### 5.2 Conversao em lote / fila  ✅
 
-- **Solucao:** lista de tarefas, converter varios de uma vez
+- **Feito:** `_queue` + `_queue_index`; `_item_done` avanca o indice na thread
+  principal e dispara `_process_next_in_queue`
 - **Aceite:** N arquivos -> N saidas; um erro em um nao interrompe os demais;
-  log mostra `2/10 concluido`
-- **Dependencia:** refatorar `_worker` para aceitar uma fila
-- **Atalho:** resolve parte de 5.1
+  status mostra `Convertendo 2/10` e a barra usa uma unidade por arquivo
+- **Nota:** o resumo e um unico dialogo no fim, nunca um por arquivo
 
-#### 5.3 Cancelamento  ⬜
+#### 5.3 Cancelamento  ✅
 
-- **Solucao:** `threading.Event` compartilhado, verificado entre etapas
-- **Aceite:** botao "Cancelar" aparece durante a conversao; ao cancelar, o
-  arquivo parcial **nao** e salvo e o status mostra "Cancelado"
+- **Feito:** flag `_cancel_requested` verificada entre arquivos
+- **Aceite:** botao "Cancelar" habilita durante a fila; ao cancelar, o arquivo
+  parcial **nao** e salvo e o status mostra "Fila cancelada"
 - **Nota:** `MarkItDown.convert()` nao e cancelavel — o cancelamento so tem
   efeito entre arquivos (na fila) ou apos a etapa atual
 
-#### 5.4 Progresso real (percentual)  ⬜
+#### 5.4 Progresso real (percentual)  🚧 parcial
 
-- **Solucao:** converter a cada pagina via `pdfplumber` para estimar
-- **Aceite:** barra deterministica com `%` real em PDFs multi-pagina
+- **Feito:** barra deterministica com `%` real por arquivo da fila
+- **Falta:** `%` por pagina em PDFs multi-pagina via `pdfplumber`
 - **Risco:** exige hook no conversor do MarkItDown ou reimplementacao local
 
 #### 5.5 Topicos em portugues  ⬜
@@ -291,12 +303,13 @@ Hoje todas as strings estao fixas em portugues no codigo.
 - **Solucao:** `ScrolledText` read-only com os primeiros N caracteres
 - **Aceite:** botao "Visualizar" abre um dialogo com o Markdown
 
-#### 5.7 Lembrar diretorios  ⬜
+#### 5.7 Lembrar diretorios  ✅
 
-- **Solucao:** `~/.config/markitdown-gui/config.json` (XDG no Linux,
-  `%APPDATA%` no Windows, `~/Library/Application Support` no macOS)
-- **Aceite:** reabrir o app restaura origem e destino anteriores
-- **Risco:** validar o JSON para nao quebrar por arquivo corrompido
+- **Feito:** `get_config_dir()`/`load_config()`/`save_config()` em
+  `~/.config/markitdown-gui/config.json` (XDG no Linux, `%APPDATA%` no Windows,
+  `~/Library/Application Support` no macOS)
+- **Aceite:** reabrir o app restaura os ultimos diretorios de origem e destino
+- **Risco:** JSON corrompido e ignorado silenciosamente (`except Exception`)
 
 #### 5.8 Acoes de clipboard  ⬜
 
@@ -335,12 +348,13 @@ converter: markitdown-gui 1.1.0
 
 #### 5.12 Testes automatizados  🚧 parcial
 
-**Ja feito:** 40 testes em `tests/test_gui.py`, rodando no CI em 3 SOs x 4
-versoes do Python.
+**Ja feito:** 45 testes em `tests/test_gui.py`, rodando no CI em 3 SOs x 4
+versoes do Python. A classe `TestQueue` cobre avanco da fila, erro parcial,
+cancelamento e a regressao do `Ctrl+Enter`.
 
 **Falta:**
 
-- [ ] `_worker` com `ImportError` (markitdown ausente)
+- [ ] `_worker` com `ImportError` (markitdown ausente) — hoje so o caminho feliz
 - [ ] `_worker` com excecao generica (arquivo corrompido)
 - [ ] Fechar a janela durante a conversao **nao** deixa thread orfa
 - [ ] `pip_install_hint` parametrizado por plataforma (monkeypatch de `sys.platform`)

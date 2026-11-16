@@ -12,6 +12,37 @@ Versionamento seguindo [SemVer](https://semver.org/lang/pt-BR/).
 Próximo release a ser preparado. Use este seção para registrar o que está
 em andamento antes de cortar uma versão.
 
+### Corrigido
+
+- **Fila de conversão avançava só o primeiro arquivo.** `_queue_index` nunca
+  era incrementado e o worker não disparava o próximo item; agora cada arquivo
+  concluído chama `_item_done`, que avança o índice e inicia o seguinte. Um erro
+  em um arquivo não interrompe os demais e o resumo é exibido uma única vez no
+  fim (antes era um `messagebox` por arquivo).
+- **`Ctrl+Enter` levantava `AttributeError`.** O atalho chamava `convert_file()`,
+  removido no refactor de drag-and-drop; agora chama `convert_queue()`.
+- **Campos de origem/destino não existiam mais na janela.** O refactor de 5.1
+  removeu os `Entry` e os botões "Procurar" e deixou `browse_file()` sem efeito
+  visível; os campos voltaram, ligados a `src_var`/`dst_var`, e o drag-and-drop
+  agora registra os dois (o `hasattr(self, "src_entry")` era sempre falso).
+- **Destino podia sobrescrever a origem.** Abrir um `.md` sem destino gerava
+  `arquivo.md -> arquivo.md` e apagava o original; `default_destination()` agora
+  sugere `<nome>.converted.md` e `convert_queue` recusa origem == destino.
+- **Barra de progresso usava escalas diferentes** (máximo = nº de arquivos,
+  valor = 100 no fim). Agora usa uma unidade por arquivo.
+- **Botões do rodapé colapsavam** com a nova altura de conteúdo: janela
+  redimensionada para `760x780` (mínimo `720x680`).
+
+### Alterado
+
+- `_set_busy` também desabilita os campos de entrada e os botões da fila.
+- Removidos `_on_success`, `_progress_complete` e `_progress_reset`, que ficaram
+  sem uso depois da agregação do resumo.
+- Limpezas: `columnconfigure` duplicado, comentário `# Acoes` duplicado,
+  `BooleanVar` inicializada duas vezes e `_total_files` agora é usado de fato.
+- **41 → 45 testes**; nova classe `TestQueue` cobre avanço da fila, erro parcial,
+  cancelamento e a regressão do `Ctrl+Enter`.
+
 ---
 
 ## [1.1.0] — 2026-11-13
